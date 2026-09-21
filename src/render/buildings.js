@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { mulberry32 } from './rng.js';
 import { scaleAt, lensHeight, hullVisible } from './perspective.js';
+import { facadeStyle, drawFacade } from './facades.js';
 
 // Pseudo-3D buildings seen by a camera looking straight down (see perspective.js): each block is drawn from the height it
 // starts at to the height it reaches, its top scaled away from the point the camera is above by H / (H - height), and the
@@ -31,6 +32,7 @@ export class BuildingRenderer {
     this.scene = scene;
     this.depth = depth;
     this.roofs = roofs;
+    this.facades = map.facades !== false; // pseudo-buildings can opt out
     // Every visible building is its own Graphics (walls) with, on top of it, an Image (the photo roof), so far and near buildings
     // keep the painter's order that a single Graphics gave. `g` is the handle the look controller uses to hide the whole layer.
     this.pool = []; this.shown = new Set(); this.on = true;
@@ -51,7 +53,10 @@ export class BuildingRenderer {
     const poly = part ? part.points : b.points;
     const base = part ? part.base : 0, top = part ? part.top : b.height;
     const rand = mulberry32(b.id + (part ? Math.round(part.top) : 0));
-    const pal = b.pal ?? (top > 60 ? GLASS_TOWER : PALETTE[Math.floor(rand() * PALETTE.length)]);
+    // the look of the walls: a facade style (glass tower, brick/stone with windows, parking deck) chosen from what is known
+    const fac = this.facades ? facadeStyle(b, b.height ?? top) : null;
+    const base0 = b.pal ?? (top > 60 ? GLASS_TOWER : PALETTE[Math.floor(rand() * PALETTE.length)]);
+    const pal = fac ? { roof: base0.roof, wall: fac.wall } : base0;
     const pts = poly.map(([x, y]) => ({ x, y }));
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const p of pts) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
@@ -73,7 +78,7 @@ export class BuildingRenderer {
     return {
       dim: outside ? 0.62 : 1, base, top, pts, edges, bbox: [x0, y0, x1, y1], group: [mx, my], roof, img: null,
       basePts: pts.map(() => ({ x: 0, y: 0 })), roofPts: pts.map(() => ({ x: 0, y: 0 })),
-      pal, floors: Math.max(1, Math.round((top - base) / 3.4)),
+      pal, fac, floors: Math.max(1, Math.round((top - base) / 3.4)),
     };
   }
 
@@ -93,6 +98,7 @@ export class BuildingRenderer {
     const hw = viewW / (2 * zoom), hh = viewH / (2 * zoom);
     const v = { x: cx - hw, y: cy - hh, right: cx + hw, bottom: cy + hh };
     const lens = lensHeight(H);
+    this.H = H;
     const inView = [];
     for (const b of this.buildings) {
       if (b.base >= lens) continue; // starts above the lens: never seen
@@ -140,6 +146,7 @@ export class BuildingRenderer {
       g.fillStyle(rgb(wall, e.shade * b.dim), 1);
       g.fillPoints(q, true);
 
+      if (b.fac) { drawFacade(g, b.fac, b, e, cx, cy, this.H, zoom, e.shade, b.dim); continue; }
       // window bands, only when the wall is wide enough on screen to show them
       const thickness = Math.hypot(ra.x - ba.x, ra.y - ba.y) * zoom;
       if (thickness > 3 && e.len > 3) {

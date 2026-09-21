@@ -20,7 +20,7 @@ export function skywayBuildings(map) {
       let area = 0;
       for (let k = 0; k < 4; k++) { const [x1, y1] = pts[k], [x2, y2] = pts[(k + 1) % 4]; area += x1 * y2 - x2 * y1; }
       if (area < 0) pts = pts.reverse(); // footprints are wound one way so the walls know which side is outside
-      out.push({ id: s.id * 10 + i, points: pts, height: SKYWAY.top, pal: { roof: [142, 152, 158], wall: [70, 92, 108] }, parts: [{ points: pts, base: SKYWAY.base, top: SKYWAY.top }] });
+      out.push({ id: s.id * 10 + i, points: pts, height: SKYWAY.top, facade: 'glass', pal: { roof: [142, 152, 158], wall: [70, 92, 108] }, parts: [{ points: pts, base: SKYWAY.base, top: SKYWAY.top }] });
     }
   }
   return out;

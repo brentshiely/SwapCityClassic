@@ -71,6 +71,15 @@ frame to `data/roofs_naip.jpg` (+ `roofs_naip.json`). NAIP is straightened to th
 block's) roof from where it really is, and `BuildingRenderer` draws it scaled with the perspective. Each building is its own
 Graphics with the roof Image on top, so near and far buildings keep their painter's order. Google mode does not use the photos.
 
+## Facades
+
+`src/render/facades.js` gives each building a wall style from what is known: OSM type, height, storey count (`building:levels`, 75 of
+134), and rarely a material or colour (10 carry a material). Styles: `glass` (a curtain-wall tower with continuous glass bands and mullions
+in one of five tints), `punched` (brick, stone or concrete with a window per bay per floor and a storefront on the ground floor of
+shops and offices) and `garage` (open parking decks). The choice is deterministic per building. Floors are drawn at their true heights, so with
+the perspective the upper floors of a tall building stretch. Detail drops out when a wall is thin on screen (level of detail).
+The same renderer draws the offline look only; Google mode has its own real walls.
+
 ## Skyways
 
 OSM has the Minneapolis Skyway (bridge=covered ways). `tools/bake_map.mjs` keeps the stretches over open ground into

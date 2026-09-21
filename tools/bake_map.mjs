@@ -226,6 +226,10 @@ for (const w of ways) {
     height = t.building === 'roof' ? 5 : t.building === 'parking' ? 10 + f * 6 : 14 + f * 26;
   }
   const b = { id: w.id, name: t.name ?? '', type: t.building, height: r1(height), heightSource: src, points: pts.map(rpt) };
+  // what OSM knows about the look of the walls (little: 10 of 134 carry a material), used to pick a facade style
+  if (Number.isFinite(lv) && lv > 0) b.levels = lv;
+  if (t['building:material']) b.material = t['building:material'];
+  if (t['building:colour']) b.colour = t['building:colour'];
   // Stepped buildings (a low base with towers on it) come as blocks: each has a footprint, the height it starts at
   // (the roof of what it stands on) and the height it reaches. The whole-building footprint above stays the collision shape.
   if (parts[String(w.id)]) {

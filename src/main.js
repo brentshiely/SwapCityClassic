@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
-import { BootScene } from './scenes/BootScene.js';
+import { MapDebugScene } from './scenes/MapDebugScene.js';
 
-new Phaser.Game({
+// Exposed so the game can be inspected and driven from the browser console while testing.
+window.__game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',
   backgroundColor: '#1b1f22',
@@ -10,5 +11,5 @@ new Phaser.Game({
     width: '100%',
     height: '100%',
   },
-  scene: [BootScene],
+  scene: [MapDebugScene],
 });

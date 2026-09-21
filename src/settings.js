@@ -4,7 +4,7 @@
 export const DEFAULTS = {
   zoomNear: 20, zoomFar: 12, lookahead: 0.45,
   vMax: 20, accel: 7.5, grip: 9, handbrakeGrip: 1.3, turnMax: 2.6,
-  lean: 0.003, cars: 16, peds: 80,
+  camHeight: 300, cars: 16, peds: 80,
 };
 
 export const SPEC = [
@@ -21,7 +21,7 @@ export const SPEC = [
     { key: 'turnMax', label: 'Steering rate', unit: 'rad/s', min: 1.2, max: 4.5, step: 0.1, hint: 'how sharply it turns' },
   ] },
   { group: 'World', items: [
-    { key: 'lean', label: 'Building lean', unit: '', min: 0, max: 0.008, step: 0.0005, hint: '0 = flat, more = taller feel' },
+    { key: 'camHeight', label: 'Camera height', unit: 'm', min: 60, max: 700, step: 10, hint: 'lower = buildings loom more; taller ones pass the lens' },
     { key: 'cars', label: 'Traffic', unit: 'cars', min: 0, max: 40, step: 1, hint: 'cars on the map' },
     { key: 'peds', label: 'Crowd', unit: 'people', min: 0, max: 200, step: 5, hint: 'people around you' },
   ] },

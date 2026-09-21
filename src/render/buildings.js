@@ -1,12 +1,11 @@
 import Phaser from 'phaser';
 import { mulberry32 } from './rng.js';
+import { scaleAt, lensHeight, hullVisible } from './perspective.js';
 
-// Pseudo-3D buildings, GTA1 style: the roof of each building is pushed away from the point the
-// camera is looking at, in proportion to its height, and the walls facing that point show between
-// the footprint and the roof. Everything is redrawn each frame but only for buildings in view.
+// Pseudo-3D buildings seen by a camera looking straight down (see perspective.js): each block is drawn from the height it
+// starts at to the height it reaches, its top scaled away from the point the camera is above by H / (H - height), and the
+// walls facing that point show between its base and its top. Everything is redrawn each frame but only for buildings in view.
 
-// roof shift, as a fraction of (distance from camera centre x effective height); the settings panel changes it
-export const RENDER = { lean: 0.003 };
 const LIGHT = Math.atan2(-0.8, -0.6); // light comes from the upper left
 const PALETTE = [
   { roof: [139, 144, 150], wall: [104, 110, 116] }, // concrete
@@ -20,8 +19,6 @@ const GLASS_TOWER = { roof: [125, 138, 148], wall: [56, 72, 86] };
 
 const rgb = ([r, g, b], k = 1) => Phaser.Display.Color.GetColor(Math.min(255, r * k), Math.min(255, g * k), Math.min(255, b * k));
 
-// Tall buildings lean less than their true height would say, so a tower does not smear across the screen.
-const effectiveHeight = (h) => Math.min(h, 40) + Math.max(0, h - 40) * 0.25;
 
 export class BuildingRenderer {
   constructor(scene, map) {
@@ -61,35 +58,41 @@ export class BuildingRenderer {
     const w = this.world, mx = (gx0 + gx1) / 2, my = (gy0 + gy1) / 2;
     const outside = mx < w.minX || mx > w.maxX || my < w.minY || my > w.maxY;
     return {
-      dim: outside ? 0.62 : 1, base, top, eh: effectiveHeight(top), ehBase: effectiveHeight(base), pts, edges, bbox: [x0, y0, x1, y1], group: [mx, my],
+      dim: outside ? 0.62 : 1, base, top, pts, edges, bbox: [x0, y0, x1, y1], group: [mx, my],
       basePts: pts.map(() => ({ x: 0, y: 0 })), roofPts: pts.map(() => ({ x: 0, y: 0 })),
       pal, floors: Math.max(1, Math.round((top - base) / 3.4)),
     };
   }
 
-  /** cx, cy: the world point at the middle of the screen; the roofs lean away from it. */
-  update(cx, cy, zoom, viewW, viewH) {
+  /**
+   * @param cx, cy the world point at the middle of the screen (the camera is directly above it)
+   * @param H camera height in metres
+   */
+  update(cx, cy, zoom, viewW, viewH, H) {
     const t0 = performance.now();
     const g = this.g;
     g.clear();
-    const hw = viewW / (2 * zoom), hh = viewH / (2 * zoom), pad = 60;
+    const hw = viewW / (2 * zoom), hh = viewH / (2 * zoom);
     const v = { x: cx - hw, y: cy - hh, right: cx + hw, bottom: cy + hh };
+    const lens = lensHeight(H);
     const inView = [];
     for (const b of this.buildings) {
-      const [x0, y0, x1, y1] = b.bbox;
-      if (x1 < v.x - pad || x0 > v.right + pad || y1 < v.y - pad || y0 > v.bottom + pad) continue;
+      if (b.base >= lens) continue; // starts above the lens: never seen
+      b.sB = scaleAt(H, b.base); b.sT = scaleAt(H, b.top);
+      if (!hullVisible(b.bbox, cx, cy, b.sB, b.sT, v)) continue;
       b.dist = Math.hypot(b.group[0] - cx, b.group[1] - cy);
       inView.push(b);
     }
     // far buildings first, so nearer ones overlap them; within one building the lowest block first, so a tower is drawn over its base
     inView.sort((p, q) => (q.dist - p.dist) || (p.top - q.top));
-    for (const b of inView) this.drawBuilding(g, b, cx, cy, zoom);
+    for (const b of inView) this.drawBuilding(g, b, cx, cy, zoom, lens);
     this.stats.drawn = inView.length;
     this.stats.ms = performance.now() - t0;
   }
 
-  drawBuilding(g, b, cx, cy, zoom) {
-    const k = RENDER.lean * b.eh, kb = RENDER.lean * b.ehBase;
+  drawBuilding(g, b, cx, cy, zoom, lens) {
+    const k = b.sT - 1, kb = b.sB - 1; // how far the top and the base are pushed out, as a share of the distance from the centre
+    const overhead = b.top >= lens; // the top is above the lens: no roof to see, the walls run off the screen
     for (let i = 0; i < b.pts.length; i++) {
       const p = b.pts[i], r = b.roofPts[i], q0 = b.basePts[i];
       r.x = p.x + (p.x - cx) * k; r.y = p.y + (p.y - cy) * k;
@@ -126,6 +129,7 @@ export class BuildingRenderer {
       }
     }
 
+    if (overhead) return;
     g.fillStyle(rgb(roof, b.dim), 1);
     g.fillPoints(b.roofPts, true);
     g.lineStyle(0.35, rgb(roof, 0.55 * b.dim), 1);

@@ -21,6 +21,9 @@ writeFileSync('release/HOW TO PLAY.txt', `SwapCityClassic - how to play (works w
    ?notraffic no traffic          ?nopeds    no people
    ?free      free-look camera    ?debug     map data view
 
+If the screen says it could not get enough graphics memory: close other SwapCityClassic tabs
+(each keeps about 700 MB of textures) and reload. Keep just ONE tab open.
+
 Map data (c) OpenStreetMap contributors, ODbL. See LICENSES.md in the project.
 Built ${new Date().toISOString().slice(0, 10)}.
 `);

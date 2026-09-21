@@ -2,6 +2,20 @@ import Phaser from 'phaser';
 import { WorldScene } from './scenes/WorldScene.js';
 import { MapDebugScene } from './scenes/MapDebugScene.js';
 
+// If the browser cannot give the game the graphics memory it needs (usually because several copies of the game or other
+// heavy tabs are open), say so plainly instead of leaving a blank screen.
+function graphicsHelp(e) {
+  const m = String(e?.error?.message ?? e?.reason?.message ?? e?.message ?? '');
+  if (!/framebuffer|webgl|context lost|out of memory/i.test(m) || document.getElementById('gfxhelp')) return;
+  const d = document.createElement('div');
+  d.id = 'gfxhelp';
+  d.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#14181a;color:#e8ecee;font:16px/1.5 Menlo,monospace;text-align:center;padding:24px;z-index:99';
+  d.innerHTML = '<div style="max-width:34em"><b style="color:#ffd24a;font-size:20px">SwapCityClassic could not get enough graphics memory</b><br><br>Close any other SwapCityClassic tabs (each one keeps about 700 MB of textures) and other heavy tabs, then reload this page.</div>';
+  document.body.appendChild(d);
+}
+addEventListener('error', graphicsHelp);
+addEventListener('unhandledrejection', graphicsHelp);
+
 // index.html?debug opens the map-data debug view instead of the game world.
 const debug = new URLSearchParams(location.search).has('debug');
 

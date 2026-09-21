@@ -88,8 +88,15 @@ export class CarView {
     this.world = world;
     // Power-of-two size: with mipmapping on, some browsers reject a framebuffer texture of any other size.
     // 2048 px at 4 px/m covers 512 m, more than the 439 x 423 m world, anchored at its top-left corner.
-    this.skids = scene.add.renderTexture(world.minX, world.minY, SKID_SIZE, SKID_SIZE);
-    this.skids.setOrigin(0, 0).setScale(1 / SKID_PPM).setDepth(2);
+    // Tyre marks are optional: if the browser cannot spare the graphics memory for this texture (for example several copies of the
+    // game are open), carry on without them instead of failing to start.
+    try {
+      this.skids = scene.add.renderTexture(world.minX, world.minY, SKID_SIZE, SKID_SIZE);
+      this.skids.setOrigin(0, 0).setScale(1 / SKID_PPM).setDepth(2);
+    } catch (err) {
+      this.skids = null;
+      console.warn('tyre marks disabled (not enough graphics memory):', err?.message ?? err);
+    }
     this.stamp = scene.add.image(0, 0, 'skid').setVisible(false);
     this.last = null;
   }
@@ -103,7 +110,7 @@ export class CarView {
 
     // tyre marks from the rear wheels while sliding or handbraking
     const sliding = car.handbraking || (Math.abs(car.sideSpeed) > 2.2 && car.speed > 4);
-    if (sliding) {
+    if (sliding && this.skids) {
       for (const side of [-0.72, 0.72]) {
         const wx = car.x - c * 1.35 - s * side, wy = car.y - s * 1.35 + c * side;
         this.stamp.setRotation(Math.atan2(car.vy, car.vx)).setScale(0.25);

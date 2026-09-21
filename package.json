@@ -10,7 +10,7 @@
     "bake": "node tools/bake_map.mjs",
     "package": "node scripts/package.mjs",
     "check-offline": "node tools/check_offline.mjs",
-    "test": "node tools/test_car.mjs && node tools/test_collision.mjs && node tools/test_traffic.mjs && node tools/test_peds.mjs && node tools/test_navigation.mjs"
+    "test": "node tools/test_car.mjs && node tools/test_collision.mjs && node tools/test_traffic.mjs && node tools/test_peds.mjs && node tools/test_navigation.mjs && node tools/test_perspective.mjs"
   },
   "dependencies": {
     "phaser": "^3.90.0"

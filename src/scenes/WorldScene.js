@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import map from '../../data/map.json';
 import { buildGround } from '../render/ground.js';
-import { BuildingRenderer, RENDER } from '../render/buildings.js';
+import { BuildingRenderer } from '../render/buildings.js';
+import { cameraHeight } from '../render/perspective.js';
 import { loadSettings, saveSettings } from '../settings.js';
 import { TuningPanel } from '../ui/tuningPanel.js';
 import { NavHud } from '../ui/navHud.js';
@@ -27,6 +28,7 @@ export class WorldScene extends Phaser.Scene {
   create() {
     const params = new URLSearchParams(location.search);
     this.free = params.has('free');
+    this.camHeightSetting = Number(params.get('camh')) || 300; // metres at 20 px/m (free-look camera; ?camh=200 to try another)
     this.stopAt = Number(params.get('stop')) || 0; // freeze the sim at this many seconds (for test screenshots)
     this.simTime = 0;
     this.cameras.main.setBackgroundColor(0x14181a);
@@ -48,6 +50,7 @@ export class WorldScene extends Phaser.Scene {
 
     // live settings (press T): the camera, driving and world numbers, remembered in this browser
     this.settings = loadSettings();
+    if (Number(params.get('camh'))) this.settings.camHeight = Number(params.get('camh')); // address-bar value wins, like ?cars and ?peds
     this.navHud = new NavHud(map);
     this.tuning = new TuningPanel(this.settings, (st) => { saveSettings(st); this.applySettings(); });
     if (params.has('tune')) this.tuning.show();
@@ -84,7 +87,6 @@ export class WorldScene extends Phaser.Scene {
   applySettings() {
     const st = this.settings;
     Object.assign(CAR, { vMax: st.vMax, accel: st.accel, grip: st.grip, handbrakeGrip: st.handbrakeGrip, turnMax: st.turnMax });
-    RENDER.lean = st.lean;
     this.traffic.count = this.urlCars ?? st.cars;
     this.peds.count = this.urlPeds ?? st.peds;
   }
@@ -100,7 +102,7 @@ export class WorldScene extends Phaser.Scene {
     const cam = this.cameras.main;
     if (this.free) {
       const cx = cam.scrollX + cam.width / 2, cy = cam.scrollY + cam.height / 2;
-      this.buildings.update(cx, cy, cam.zoom, cam.width, cam.height);
+      this.buildings.update(cx, cy, cam.zoom, cam.width, cam.height, cameraHeight(this.camHeightSetting, 20, cam.zoom));
       this.hudText(`${cam.zoom.toFixed(1)} px/m  |  view @ ${cx.toFixed(0)},${cy.toFixed(0)}`, 'two-finger scroll = pan   pinch or + / - = zoom   0 = refit   drag or arrows = pan');
       return;
     }
@@ -129,7 +131,7 @@ export class WorldScene extends Phaser.Scene {
     const zoomTarget = Phaser.Math.Linear(this.settings.zoomNear, this.settings.zoomFar, Math.min(1, car.speed / CAR.vMax));
     this.camZoom += (zoomTarget - this.camZoom) * (1 - Math.exp(-2.5 * dt));
     this.applyCamera();
-    this.buildings.update(this.camX, this.camY, this.camZoom, cam.width, cam.height);
+    this.buildings.update(this.camX, this.camY, this.camZoom, cam.width, cam.height, cameraHeight(this.settings.camHeight, this.settings.zoomNear, this.camZoom));
 
     // traffic: cars spawn only outside what the player can see
     const view = { cx: this.camX, cy: this.camY, hw: cam.width / (2 * this.camZoom), hh: cam.height / (2 * this.camZoom) };

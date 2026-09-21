@@ -25,6 +25,7 @@ import { PlayerController } from '../player/playerController.js';
 import { MissionManager, resolveSpot } from '../missions/missions.js';
 import { PoliceManager } from '../police/police.js';
 import { Sound } from '../audio/sound.js';
+import { Radar } from '../ui/radar.js';
 import { CarDamage } from '../vehicles/damage.js';
 import { CarFx, BLAST_RADIUS } from '../vehicles/carFx.js';
 
@@ -109,6 +110,7 @@ export class WorldScene extends Phaser.Scene {
     this.player = new PlayerController(this);
     this.sound = new Sound(); // made in code; starts on the first key or click
     this.keyX = this.input.keyboard.addKey('X'); this.keyN = this.input.keyboard.addKey('N'); this.keyH = this.input.keyboard.addKey('H');
+    this.radar = new Radar(this.world);
     this.damage = new CarDamage(); this.fx = new CarFx(this); this.wreck = false;
     this.sprays = ['South 9th Street|-100,170', '2nd Avenue South|130,-60'].map((k) => { const [street, n] = k.split('|'); return resolveSpot(this.world, { street, near: n.split(',').map(Number) }); }).filter(Boolean); // paint shops
     this.police = new PoliceManager(this.traffic); // crimes raise the wanted level; police cars chase (traffic cars with `police` set)
@@ -255,6 +257,10 @@ export class WorldScene extends Phaser.Scene {
     }
     this.updateMissions(dt, me);
     this.updateDamage(dt, me);
+    {
+      const obj = this.missions.objective(), offer = this.missions.active ? null : this.missions.nextOffer();
+      this.radar.update(dt, { x: me.x, y: me.y, heading: me.heading, target: obj?.target ?? null, phone: offer?.spot ?? null, shops: this.sprays, police: this.traffic.cars.filter((c) => c.police && !c.dead) });
+    }
     // sound
     const snd = this.sound;
     if (Phaser.Input.Keyboard.JustDown(this.keyX)) snd.toggleMute();

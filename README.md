@@ -62,6 +62,14 @@ The pistol (`weapon.js`, Space or click, aim with the mouse) is a hitscan shot: 
 graph. Yellow rings are the phones (M to take the job), pink is the target. Cash and finished jobs are kept in localStorage.
 Tests: `tools/test_onfoot.mjs`, `tools/test_missions.mjs`.
 
+## Radar and street names
+
+`src/ui/radar.js`: a round north-up radar (bottom left, 380 m range) with the streets (freeways in gold) and water, the player as a white arrow,
+the current objective in pink (an arrow on the rim with the distance when it is beyond the range), the mission phone in yellow, paint shops in
+green and police cars flashing red and blue. Freeways and ramps have no `name` in OpenStreetMap, only a route number: `tools/fetch_road_refs.mjs`
+downloads those tags (`data/raw/city/road_refs.json`) and `tools/bake_city.mjs` names roads from them ("I-394", "I-94 / MN 55", "Ramp to I-94 East",
+"Ramp") so the street indicator never says "Unnamed street" on a freeway.
+
 ## Car damage
 
 `src/vehicles/damage.js`: a hit (the speed lost in one moment, over 2.5 m/s) costs health; four levels (fine, dented 75, smoking 50, burning 22);

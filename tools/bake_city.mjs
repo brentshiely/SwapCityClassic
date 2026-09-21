@@ -253,6 +253,27 @@ const meta = {
   tiles: { minTx: Math.floor(world.minX / TILE), minTy: Math.floor(world.minY / TILE), maxTx: Math.floor(world.maxX / TILE), maxTy: Math.floor(world.maxY / TILE) },
   boundary,
 };
+// Freeways and ramps often have no `name` in OSM, only a route number (tools/fetch_road_refs.mjs): name them from that ("I-394"),
+// ramps by where they lead ("Ramp to I-394"), so the street indicator never says "Unnamed street" on a freeway.
+const REFS = await readFile('data/raw/city/road_refs.json', 'utf8').then(JSON.parse, () => ({}));
+const pretty = (ref) => ref.split(';').map((x) => {
+  const m = /^(I|US|MN|CR)\s*(.+)$/.exec(x.trim());
+  return !m ? x.trim() : m[1] === 'I' ? `I-${m[2]}` : m[1] === 'CR' ? `County Road ${m[2]}` : `${m[1]} ${m[2]}`;
+}).join(' / ');
+const labelOf = (id, highway) => {
+  const r = REFS[id];
+  if (r?.name) return r.name;
+  if (r?.ref) return pretty(r.ref);
+  if (r?.dref) return `Ramp to ${pretty(r.dref)}`;
+  if (r?.dest) return `Ramp to ${r.dest.split(';')[0]}`;
+  if (/_link$/.test(highway)) return 'Ramp';
+  return highway === 'motorway' ? 'Freeway' : '';
+};
+let named = 0;
+for (const r of roads) if (!r.name) { r.name = labelOf(r.id, r.highway); if (r.name) named++; }
+for (const e of edges) if (!e.name) e.name = labelOf(e.wayId, e.highway);
+console.log(`  roads named from route numbers/ramps: ${named}`);
+
 const city = {
   meta, roads,
   graph: { nodes: graphNodes.map(({ id, x, y, signal, stop, boundary, degree }) => ({ id, x, y, signal, stop, boundary, degree })), edges },

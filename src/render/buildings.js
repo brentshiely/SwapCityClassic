@@ -55,12 +55,13 @@ export class BuildingRenderer {
     };
   }
 
-  update(cam) {
+  /** cx, cy: the world point at the middle of the screen; the roofs lean away from it. */
+  update(cx, cy, zoom, viewW, viewH) {
     const t0 = performance.now();
     const g = this.g;
     g.clear();
-    const cx = cam.midPoint.x, cy = cam.midPoint.y;
-    const v = cam.worldView, pad = 60;
+    const hw = viewW / (2 * zoom), hh = viewH / (2 * zoom), pad = 60;
+    const v = { x: cx - hw, y: cy - hh, right: cx + hw, bottom: cy + hh };
     const inView = [];
     for (const b of this.buildings) {
       const [x0, y0, x1, y1] = b.bbox;
@@ -69,7 +70,7 @@ export class BuildingRenderer {
       inView.push(b);
     }
     inView.sort((p, q) => q.dist - p.dist); // far first, so nearer buildings overlap them
-    for (const b of inView) this.drawBuilding(g, b, cx, cy, cam.zoom);
+    for (const b of inView) this.drawBuilding(g, b, cx, cy, zoom);
     this.stats.drawn = inView.length;
     this.stats.ms = performance.now() - t0;
   }

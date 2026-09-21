@@ -184,6 +184,15 @@ export class TrafficSim {
           }
         }
       }
+      // people in the road: stop for them (this.peds is set by the game or the tests)
+      if (this.peds) {
+        for (const p of this.peds) {
+          if (p.dead) continue;
+          // where the person is now, and where they will be when this car gets there (someone stepping off the kerb)
+          const tt = Math.min(3, t), pr = rMe + (p.edge?.type === 'cross' ? 1.3 : 0.45); // anyone on a crosswalk is given more room
+          if (Math.hypot(p.x - x, p.y - y) < pr || Math.hypot(p.x + p.vx * tt - x, p.y + p.vy * tt - y) < pr) return { gap: d - c.length / 2, who: null };
+        }
+      }
       if (player && this.hits(player, x, y, rMe)) return { gap: d - c.length / 2, who: 'player' };
     }
     return null;

@@ -48,3 +48,24 @@ export function junctionInfo(map) {
   for (const [id, hw] of half) info.set(id, { maxHalf: hw, stopDist: hw + 4.5 });
   return info;
 }
+
+/** The points of a polyInfo between distances s0 and s1 along it (s0 <= s1), including both ends. */
+export function sliceInfo(info, s0, s1) {
+  const tmp = {}, out = [];
+  pointAt(info, s0, tmp); out.push([tmp.x, tmp.y]);
+  for (let i = 1; i < info.pts.length - 1; i++) if (info.cum[i] > s0 + 0.01 && info.cum[i] < s1 - 0.01) out.push(info.pts[i]);
+  pointAt(info, s1, tmp); out.push([tmp.x, tmp.y]);
+  return out;
+}
+
+/** Nearest point on a polyInfo to (x, y): { s, dist } */
+export function nearestOnPolyline(info, x, y) {
+  let best = { s: 0, dist: Infinity };
+  for (let i = 0; i < info.pts.length - 1; i++) {
+    const a = info.pts[i], b = info.pts[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / l2));
+    const d = Math.hypot(x - (a[0] + dx * t), y - (a[1] + dy * t));
+    if (d < best.dist) best = { s: info.cum[i] + t * Math.sqrt(l2), dist: d };
+  }
+  return best;
+}

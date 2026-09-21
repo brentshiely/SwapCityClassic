@@ -3,9 +3,10 @@ import { headingsMod } from './signalAxis.js';
 // Timed traffic lights at the junctions OpenStreetMap marks as signalized. Each junction alternates
 // between two axes (streets running one way, then the ones crossing them):
 // green, yellow, then a short all-red before the other axis goes. Junctions are offset from each
-// other so the whole map is not in step.
+// other so the whole map is not in step. Pedestrians read the same clock (see peds/).
 export const CYCLE = { green: 9, yellow: 2, allRed: 1.5 };
-const PHASE = CYCLE.green + CYCLE.yellow + CYCLE.allRed;
+export const PHASE = CYCLE.green + CYCLE.yellow + CYCLE.allRed;
+const TOTAL = PHASE * 2;
 
 export class Signals {
   constructor(net) {
@@ -19,16 +20,22 @@ export class Signals {
         const d = headingsMod(net.headingAtEnd(de), ref);
         de.signal = { node: n.id, axis: d < Math.PI / 4 ? 0 : 1 };
       }
-      this.byNode.set(n.id, { node: n, offset: (n.id * 7.3) % (PHASE * 2), approaches: incoming });
+      this.byNode.set(n.id, { node: n, ref, offset: (n.id * 7.3) % TOTAL, approaches: incoming });
     }
   }
 
-  /** seconds into this approach's window of the cycle: green from 0, yellow next, then red until it wraps at 25 */
-  local(de, t) {
-    const s = this.byNode.get(de.signal.node);
-    const total = PHASE * 2;
-    return ((((t + s.offset) - de.signal.axis * PHASE) % total) + total) % total;
+  /** which of the junction's two axes a street with this heading belongs to */
+  axisOfHeading(nodeId, heading) {
+    return headingsMod(heading, this.byNode.get(nodeId).ref) < Math.PI / 4 ? 0 : 1;
   }
+
+  /** seconds into an axis's window of the cycle: green from 0, yellow next, then red until it wraps at 25 */
+  localAxis(nodeId, axis, t) {
+    const s = this.byNode.get(nodeId);
+    return ((((t + s.offset) - axis * PHASE) % TOTAL) + TOTAL) % TOTAL;
+  }
+
+  local(de, t) { return this.localAxis(de.signal.node, de.signal.axis, t); }
 
   /** 'green' | 'yellow' | 'red' for a directed segment that ends at a signalized junction */
   state(de, t) {

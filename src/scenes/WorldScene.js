@@ -9,6 +9,8 @@ import { CarView } from '../vehicles/carView.js';
 import { DriveInput } from '../input/driveInput.js';
 import { TrafficSim, pushPlayerOutOfTraffic } from '../traffic/trafficSim.js';
 import { TrafficView } from '../traffic/trafficView.js';
+import { PedSim } from '../peds/pedSim.js';
+import { PedView } from '../peds/pedView.js';
 import { findStart } from '../world/start.js';
 
 const STEP = PHYSICS_STEP; // fixed physics step
@@ -51,8 +53,17 @@ export class WorldScene extends Phaser.Scene {
     const seed = Number(params.get('seed')) || Math.floor(Math.random() * 1e6);
     this.traffic = new TrafficSim(map, { count: Number(params.get('cars')) || 16, seed });
     if (this.trafficOn) this.traffic.fill(null, this.car);
+    // pedestrians: they stay out of buildings, keep clear of moving cars, and the traffic stops for them
+    this.pedsOn = !params.has('nopeds');
+    const blocked = (x, y) => this.collision.insideSolid(x, y);
+    this.peds = new PedSim(map, this.traffic.signals, { count: Number(params.get('peds')) || 80, seed: seed + 1, blocked });
+    this.peds.cars = this.traffic.cars;
+    this.traffic.peds = this.pedsOn ? this.peds.peds : null;
+    if (this.pedsOn) this.peds.fill(null, this.car);
+    this.blockedFn = blocked;
     this.carView = new CarView(this, map.meta.world);
     this.trafficView = new TrafficView(this, this.traffic);
+    this.pedView = new PedView(this, this.peds);
     this.input2 = new DriveInput(this);
     this.acc = 0;
     this.camX = this.car.x; this.camY = this.car.y; this.camZoom = ZOOM_NEAR;
@@ -107,8 +118,13 @@ export class WorldScene extends Phaser.Scene {
     const view = { cx: this.camX, cy: this.camY, hw: cam.width / (2 * this.camZoom), hh: cam.height / (2 * this.camZoom) };
     if (this.trafficOn && (!this.stopAt || this.simTime < this.stopAt)) this.traffic.update(dt, { x: car.x, y: car.y, heading: car.heading }, view);
     this.trafficView.update(view);
+    if (this.pedsOn && (!this.stopAt || this.simTime < this.stopAt)) {
+      const touched = this.peds.update(dt, { x: car.x, y: car.y, vx: car.vx, vy: car.vy, heading: car.heading }, view, this.blockedFn);
+      if (touched) { const k = 0.985 ** touched; car.vx *= k; car.vy *= k; } // a nudge barely slows the car
+    }
+    this.pedView.update();
 
-    this.hudText(`${Math.round(car.speed * 3.6)} km/h  |  ${this.traffic.cars.length} cars`, '↑/W gas   ↓/S brake + reverse   ←→/AD steer   Space handbrake   R restart');
+    this.hudText(`${Math.round(car.speed * 3.6)} km/h  |  ${this.traffic.cars.length} cars, ${this.peds.peds.length} people`, '↑/W gas   ↓/S brake + reverse   ←→/AD steer   Space handbrake   R restart');
   }
 
   hudText(left, controls) {

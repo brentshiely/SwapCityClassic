@@ -32,6 +32,8 @@ true north is 30 degrees anticlockwise from straight up; the rose shows that.
     npm run check-offline  # proves the build makes no network request (needs Google Chrome)
 
 `node tools/fetch_osm.mjs` downloads fresh OpenStreetMap data (needs internet; not part of the game).
+`python3 tools/lidar_heights.py --lidar <folder with dsm.npy, dem.npy, meta.json>` measures real building heights from
+USGS LiDAR into `data/heights_lidar.json` (numpy needed; the bake uses that file when present).
 
 ## Adding a setting to the T panel
 

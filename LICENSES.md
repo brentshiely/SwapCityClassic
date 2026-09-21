@@ -20,3 +20,9 @@ and generated art are separate.
 ## Art
 
 All textures, sprites, and lights are generated in code by this project. No image files are used.
+
+## Building heights
+
+`data/heights_lidar.json` holds the measured height of each OpenStreetMap building footprint, computed by
+`tools/lidar_heights.py` from **USGS 3D Elevation Program (3DEP) LiDAR** point clouds (US Government work, public
+domain). Only this small derived table ships with the game. No Google data of any kind is used to make it.

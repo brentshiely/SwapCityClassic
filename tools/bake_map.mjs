@@ -7,6 +7,10 @@ import { readFile, writeFile } from 'node:fs/promises';
 
 const cfg = JSON.parse(await readFile('data/map_config.json', 'utf8'));
 const raw = JSON.parse(await readFile(cfg.raw, 'utf8'));
+// Real building heights measured from USGS LiDAR by tools/lidar_heights.py (optional: falls back to OSM tags, then a guess)
+let lidar = {}, parts = {};
+try { parts = JSON.parse(await readFile('data/parts_lidar.json', 'utf8')).parts ?? {}; } catch { /* no stepped-building blocks: every building is one prism */ }
+try { lidar = JSON.parse(await readFile('data/heights_lidar.json', 'utf8')).buildings ?? {}; } catch { console.log('  (no data/heights_lidar.json: using OSM heights and guesses)'); }
 
 // ---------- projection ----------
 const { lat: lat0, lon: lon0 } = cfg.origin;
@@ -201,7 +205,7 @@ for (const w of ways) {
 const areaOf = (pts) => { let a = 0; for (let i = 0; i < pts.length; i++) { const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length]; a += x1 * y2 - x2 * y1; } return a / 2; };
 const hash01 = (id) => (Math.imul(id ^ (id >>> 15), 2246822519) >>> 0) / 4294967296;
 const buildings = [];
-let fromHeight = 0, fromLevels = 0, fromDefault = 0;
+let stepped = 0, fromLidar = 0, fromHeight = 0, fromLevels = 0, fromDefault = 0;
 for (const w of ways) {
   const t = w.tags ?? {};
   if (!t.building || w.geometry.length < 4) continue;
@@ -210,15 +214,30 @@ for (const w of ways) {
   if (pts.length < 3 || !bboxHits(pts, SCENE)) continue;
   if (areaOf(pts) < 0) pts.reverse(); // one consistent winding
   const h = parseFloat(t.height), lv = parseFloat(t['building:levels']);
+  const li = lidar[String(w.id)];
   let height, src;
-  if (Number.isFinite(h) && h > 0) { height = h; src = 'height'; fromHeight++; }
+  if (li && li.n >= 4 && li.h >= 3) { height = li.h; src = 'lidar'; fromLidar++; }
+  else if (li) { height = Math.max(3, li.h); src = 'lidar'; fromLidar++; } // a tiny shed or kiosk: measured, but at least 3 m
+  else if (Number.isFinite(h) && h > 0) { height = h; src = 'height'; fromHeight++; }
   else if (Number.isFinite(lv) && lv > 0) { height = lv * 3.4 + 2; src = 'levels'; fromLevels++; }
   else {
     src = 'default'; fromDefault++;
     const f = hash01(w.id);
     height = t.building === 'roof' ? 5 : t.building === 'parking' ? 10 + f * 6 : 14 + f * 26;
   }
-  buildings.push({ id: w.id, name: t.name ?? '', type: t.building, height: r1(height), heightSource: src, points: pts.map(rpt) });
+  const b = { id: w.id, name: t.name ?? '', type: t.building, height: r1(height), heightSource: src, points: pts.map(rpt) };
+  // Stepped buildings (a low base with towers on it) come as blocks: each has a footprint, the height it starts at
+  // (the roof of what it stands on) and the height it reaches. The whole-building footprint above stays the collision shape.
+  if (parts[String(w.id)]) {
+    b.parts = parts[String(w.id)].map((p) => {
+      const q = p.poly.map(([x, y]) => [x, y]);
+      if (areaOf(q) < 0) q.reverse();
+      return { points: q.map(rpt), base: p.base, top: p.top };
+    });
+    b.height = r1(Math.max(...b.parts.map((p) => p.top)));
+    stepped++;
+  }
+  buildings.push(b);
 }
 
 // ---------- ground areas ----------
@@ -266,7 +285,8 @@ const kb = Math.round(JSON.stringify(map).length / 1024);
 console.log(`Wrote data/map.json (${kb} KB)`);
 console.log(`  world ${(WORLD.maxX - WORLD.minX).toFixed(0)} x ${(WORLD.maxY - WORLD.minY).toFixed(0)} m`);
 console.log(`  roads ${roads.length}, walkways ${walkways.length}, crossings ${crossings.length}, areas ${areas.length}`);
-console.log(`  buildings ${buildings.length} (height from OSM height ${fromHeight}, levels ${fromLevels}, default ${fromDefault})`);
+console.log(`  stepped buildings drawn as blocks: ${stepped}`);
+console.log(`  buildings ${buildings.length} (height from LiDAR ${fromLidar}, OSM height ${fromHeight}, levels ${fromLevels}, guessed ${fromDefault})`);
 console.log(`  graph nodes ${graphNodes.length} (signals ${graphNodes.filter((n) => n.signal).length}, stops ${graphNodes.filter((n) => n.stop).length}, boundary ${graphNodes.filter((n) => n.boundary).length}), edges ${edges.length}`);
 console.log(`  connected pieces of the road graph: ${comps.length} (sizes ${comps.slice(0, 6).join(', ')}${comps.length > 6 ? ', ...' : ''})`);
 const layers = {};

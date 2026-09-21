@@ -61,6 +61,16 @@ tree canopies, Google's real skyways and building walls pass over cars and peopl
 picture is used as it is (nothing painted or read back). The flat ground assumption (ground at one height) is what the plane
 relies on; the T panel switch `Google overhead above cars` turns the second pass off (then our skyway blocks show again).
 
+## Roof photos
+
+In the offline look each roof is a cut-out of a real aerial photo (USDA NAIP, public domain). `python3 tools/bake_naip.py` downloads
+NAIP for the map area from the USGS National Map image service (needs internet; the game does not) and writes it in the game's own
+frame to `data/roofs_naip.jpg` (+ `roofs_naip.json`). NAIP is straightened to the ground, so a tall roof appears shifted in the photo
+(the tower leans); `python3 tools/roof_offsets.py --lidar <folder>` measures that against the LiDAR roof outlines and fits
+`shift = height * (a*x + c, b*y + d)` into `data/roof_offsets.json`. `src/render/roofs.js` cuts each building's (and each stepped
+block's) roof from where it really is, and `BuildingRenderer` draws it scaled with the perspective. Each building is its own
+Graphics with the roof Image on top, so near and far buildings keep their painter's order. Google mode does not use the photos.
+
 ## Skyways
 
 OSM has the Minneapolis Skyway (bridge=covered ways). `tools/bake_map.mjs` keeps the stretches over open ground into

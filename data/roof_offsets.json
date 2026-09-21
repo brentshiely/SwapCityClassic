@@ -1,0 +1,13 @@
+{
+ "x": [
+  5e-05,
+  0.0,
+  -0.10250000000000001
+ ],
+ "y": [
+  0.0,
+  5e-05,
+  0.0575
+ ],
+ "note": "shift of a roof in the photo, metres = height * (a*x + b*y + c); x from 'x', y from 'y'"
+}

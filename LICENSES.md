@@ -35,3 +35,9 @@ Google's policies apply: the tiles are streamed live and are **never cached, sav
 heights, geometry or textures are taken from them), and Google's logo and data attributions stay visible on screen.
 Everything ships in the offline look (OpenStreetMap + USGS LiDAR), which needs no Google data. Rendering uses
 `3d-tiles-renderer` (NASA-AMMOS, Apache-2.0) and three.js (MIT).
+
+## Roof photos
+
+`data/roofs_naip.jpg` is aerial imagery from the USDA National Agriculture Imagery Program (NAIP), a US Government work in the public
+domain, downloaded from the USGS National Map image service by `tools/bake_naip.py` and reprojected into the game's frame. No Google
+imagery is used for it.

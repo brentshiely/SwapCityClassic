@@ -21,8 +21,20 @@ const rgb = ([r, g, b], k = 1) => Phaser.Display.Color.GetColor(Math.min(255, r 
 
 
 export class BuildingRenderer {
-  constructor(scene, map) {
-    this.g = scene.add.graphics().setDepth(10);
+  /**
+   * @param scene the Phaser scene
+   * @param map { meta, buildings } (the baked map, or a list of pseudo-buildings such as skyways)
+   * @param roofs an optional RoofCutter: roofs get the aerial photo instead of a flat colour
+   * @param depth the display depth of this layer (a layer with a higher depth is drawn over one with a lower depth)
+   */
+  constructor(scene, map, roofs = null, depth = 10) {
+    this.scene = scene;
+    this.depth = depth;
+    this.roofs = roofs;
+    // Every visible building is its own Graphics (walls) with, on top of it, an Image (the photo roof), so far and near buildings
+    // keep the painter's order that a single Graphics gave. `g` is the handle the look controller uses to hide the whole layer.
+    this.pool = []; this.shown = new Set(); this.on = true;
+    this.g = { setVisible: (v) => { this.on = v; if (!v) this.hideAll(); return this.g; } };
     this.scratch = [0, 1, 2, 3].map(() => ({ x: 0, y: 0 }));
     this.stats = { drawn: 0, ms: 0 };
     this.world = map.meta.world;
@@ -57,11 +69,18 @@ export class BuildingRenderer {
     for (const [x, y] of b.points) { gx0 = Math.min(gx0, x); gy0 = Math.min(gy0, y); gx1 = Math.max(gx1, x); gy1 = Math.max(gy1, y); }
     const w = this.world, mx = (gx0 + gx1) / 2, my = (gy0 + gy1) / 2;
     const outside = mx < w.minX || mx > w.maxX || my < w.minY || my > w.maxY;
+    const roof = this.roofs ? this.roofs.cut(b.id + (part ? `p${Math.round(part.top * 10)}` : ''), pts, top) : null;
     return {
-      dim: outside ? 0.62 : 1, base, top, pts, edges, bbox: [x0, y0, x1, y1], group: [mx, my],
+      dim: outside ? 0.62 : 1, base, top, pts, edges, bbox: [x0, y0, x1, y1], group: [mx, my], roof, img: null,
       basePts: pts.map(() => ({ x: 0, y: 0 })), roofPts: pts.map(() => ({ x: 0, y: 0 })),
       pal, floors: Math.max(1, Math.round((top - base) / 3.4)),
     };
+  }
+
+  hideAll() {
+    for (const g of this.pool) g.setVisible(false).clear();
+    for (const img of this.shown) img.setVisible(false);
+    this.shown = new Set();
   }
 
   /**
@@ -70,8 +89,7 @@ export class BuildingRenderer {
    */
   update(cx, cy, zoom, viewW, viewH, H) {
     const t0 = performance.now();
-    const g = this.g;
-    g.clear();
+    if (!this.on) { this.stats.drawn = 0; this.stats.ms = 0; return; }
     const hw = viewW / (2 * zoom), hh = viewH / (2 * zoom);
     const v = { x: cx - hw, y: cy - hh, right: cx + hw, bottom: cy + hh };
     const lens = lensHeight(H);
@@ -85,12 +103,21 @@ export class BuildingRenderer {
     }
     // far buildings first, so nearer ones overlap them; within one building the lowest block first, so a tower is drawn over its base
     inView.sort((p, q) => (q.dist - p.dist) || (p.top - q.top));
-    for (const b of inView) this.drawBuilding(g, b, cx, cy, zoom, lens);
+    const now = new Set();
+    inView.forEach((b, i) => {
+      const g = this.pool[i] ?? (this.pool[i] = this.scene.add.graphics());
+      g.setVisible(true).setDepth(this.depth + i * 0.001).clear();
+      this.drawBuilding(g, b, cx, cy, zoom, lens, this.depth + i * 0.001 + 0.0005);
+      if (b.img) now.add(b.img);
+    });
+    for (let i = inView.length; i < this.pool.length; i++) this.pool[i].setVisible(false).clear();
+    for (const img of this.shown) if (!now.has(img)) img.setVisible(false);
+    this.shown = now;
     this.stats.drawn = inView.length;
     this.stats.ms = performance.now() - t0;
   }
 
-  drawBuilding(g, b, cx, cy, zoom, lens) {
+  drawBuilding(g, b, cx, cy, zoom, lens, depth) {
     const k = b.sT - 1, kb = b.sB - 1; // how far the top and the base are pushed out, as a share of the distance from the centre
     const overhead = b.top >= lens; // the top is above the lens: no roof to see, the walls run off the screen
     for (let i = 0; i < b.pts.length; i++) {
@@ -132,6 +159,15 @@ export class BuildingRenderer {
     if (overhead) return;
     g.fillStyle(rgb(roof, b.dim), 1);
     g.fillPoints(b.roofPts, true);
+    if (b.roof) {
+      // the aerial photo of this roof: the footprint's image, moved and scaled as the roof is (away from the centre by sT)
+      const r = b.roof, k1 = b.sT;
+      b.img ??= this.scene.add.image(0, 0, r.key).setOrigin(0, 0);
+      const t = Math.round(255 * Math.min(1, b.dim));
+      b.img.setPosition(r.x0 + (r.x0 - cx) * (k1 - 1), r.y0 + (r.y0 - cy) * (k1 - 1)).setDisplaySize(r.w * k1, r.h * k1)
+        .setTint(Phaser.Display.Color.GetColor(t, t, t)).setDepth(depth).setVisible(true);
+      return;
+    }
     g.lineStyle(0.35, rgb(roof, 0.55 * b.dim), 1);
     g.strokePoints(b.roofPts, true, true);
   }

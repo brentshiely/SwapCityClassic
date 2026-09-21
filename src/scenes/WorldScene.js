@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import map from '../../data/map.json';
 import { buildGround } from '../render/ground.js';
 import { BuildingRenderer } from '../render/buildings.js';
+import { RoofCutter, ROOF_PHOTO } from '../render/roofs.js';
 import { cameraHeight } from '../render/perspective.js';
 import { loadSettings, saveSettings } from '../settings.js';
 import { TuningPanel } from '../ui/tuningPanel.js';
@@ -27,6 +28,10 @@ export class WorldScene extends Phaser.Scene {
     super('world');
   }
 
+  preload() {
+    this.load.image(ROOF_PHOTO.key, ROOF_PHOTO.url); // the aerial photo the roofs are cut from (inlined in the build)
+  }
+
   create() {
     const params = new URLSearchParams(location.search);
     this.free = params.has('free');
@@ -34,8 +39,9 @@ export class WorldScene extends Phaser.Scene {
     this.stopAt = Number(params.get('stop')) || 0; // freeze the sim at this many seconds (for test screenshots)
     this.simTime = 0;
     this.cameras.main.setBackgroundColor(0x14181a);
-    this.buildings = new BuildingRenderer(this, map);
-    this.skyways = new BuildingRenderer(this, { meta: map.meta, buildings: skywayBuildings(map) }); // a separate layer: it stays on top of Google's picture too
+    this.roofCutter = new RoofCutter(this);
+    this.buildings = new BuildingRenderer(this, map, this.roofCutter);
+    this.skyways = new BuildingRenderer(this, { meta: map.meta, buildings: skywayBuildings(map) }, null, 12); // a separate layer: it stays on top of Google's picture too
     this.info = buildGround(this, map);
     console.log(`ground painted: ${this.info.barriers} barriers, ${this.info.chunks} chunks, ${(this.info.pixels / 1e6).toFixed(0)} Mpx, ${this.info.ms} ms`);
     this.hud = document.getElementById('hud');

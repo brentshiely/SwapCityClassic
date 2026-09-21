@@ -50,6 +50,18 @@ The car waits if the tile under it has not arrived. Downtown-only dev data: `nod
 City-wide roof photos: `npm run fetch-naip-city` + `npm run bake-roof-tiles` write `tiles/{tx}_{ty}.jpg` (672 px, 2 px/m, 40 m margin) and `roofs.json`; the tile brings its photo and `RoofCutter` cuts roofs from it (downtown keeps its sharper global photo; the lean outside downtown is held constant). Not yet city-wide: LiDAR heights (downtown only; elsewhere heights are guessed), and Google mode
 (only lined up within ~1.8 km of downtown, then the offline look). The flight build is tag `flight-2026-09-28` (+ `release/flight/`).
 
+## On foot, car-jacking, the pistol, missions
+
+`src/player/playerController.js` is the player as a person: E gets out (the car stays as an obstacle: `traffic.obstacles`, and the walker stops
+cars: `traffic.walkers`), WASD/arrows walk and Shift runs (`walker.js`, stopped by the same walls as the car via `CollisionWorld.resolveCircle`), E
+beside the parked car gets back in, E beside a traffic car (slower than 11 m/s) takes it: the driver is pulled out and runs
+(`PedSim.spawnLoose`, `alarm`), the car leaves the traffic, and the player's car takes its look (`CarView.setModel`); the old car is gone.
+The pistol (`weapon.js`, Space or click, aim with the mouse) is a hitscan shot: a building stops it, the first person in line dies
+(`PedSim.kill`), leaving a body and blood, and everyone within 24 m runs. `src/missions/missions.js` is a pure state machine
+(steps: `goto` (on foot / in a car / in a stolen car), `steal`, `kill`; time limits; rewards); places are named streets resolved on the road
+graph. Yellow rings are the phones (M to take the job), pink is the target. Cash and finished jobs are kept in localStorage.
+Tests: `tools/test_onfoot.mjs`, `tools/test_missions.mjs`.
+
 ## Water, bridges and tunnels (layers)
 
 `water.json` (`npm run fetch-water`, `npm run bake-water`: 262 polygons) is drawn into the ground chunks; the shore is a collision wall, so

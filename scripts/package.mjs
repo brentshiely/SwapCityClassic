@@ -11,7 +11,10 @@ writeFileSync('release/HOW TO PLAY.txt', `SwapCityClassic - how to play (works w
 
 1. Double-click SwapCityClassic.html (or drag it onto Google Chrome).
    Use Chrome or Safari. It is one file (${kb} KB): nothing else needs to be copied with it.
-2. Drive: arrow keys or WASD. Space = handbrake. R = restart.
+2. Drive: arrow keys or WASD. Space = handbrake. R = restart the car.
+   E gets you out of the car; on foot: WASD/arrows walk, Shift runs, Space or a mouse click shoots the pistol (aim with the mouse),
+   E beside your car gets back in, E beside somebody else's car takes it (they run). Yellow rings are phones: stand in one and press M
+   to take a job (a pink ring and arrow show where to go); M again abandons it. Cash and finished jobs are remembered.
    The top of the screen shows the street you are on, your heading and the next street; the compass rose
    shows where true north is (the map is turned 30 degrees, so north is NOT straight up).
    T opens the SETTINGS panel: sliders for camera zoom, top speed, grip, traffic and crowd size.

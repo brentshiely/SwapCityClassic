@@ -167,6 +167,33 @@ export class CollisionWorld {
     return false;
   }
 
+  /**
+   * Push a walking person (a circle of radius r at o.x, o.y) out of walls. Returns true if it touched one. Cars use resolve(); this is the
+   * same walls (buildings, shore, city limit, rails on the person's own layer) for something on foot.
+   */
+  resolveCircle(o, r, layer = 0) {
+    let hit = false;
+    for (let pass = 0; pass < 3; pass++) {
+      let moved = false;
+      for (const seg of this.near(o.x, o.y, r + 0.5)) {
+        if (seg.layer !== ALL_LAYERS && seg.layer !== layer) continue;
+        const ex = seg.bx - seg.ax, ey = seg.by - seg.ay;
+        const t = Math.max(0, Math.min(1, ((o.x - seg.ax) * ex + (o.y - seg.ay) * ey) / (seg.len * seg.len)));
+        const dx = o.x - (seg.ax + ex * t), dy = o.y - (seg.ay + ey * t), dist = Math.hypot(dx, dy);
+        if (dist >= r) continue;
+        let nx, ny, depth;
+        if (t > 0 && t < 1) { nx = seg.nx; ny = seg.ny; depth = r - (dx * nx + dy * ny); }
+        else { if (dist < 1e-6) { nx = seg.nx; ny = seg.ny; } else { nx = dx / dist; ny = dy / dist; } depth = r - dist; }
+        if (depth <= 0) continue;
+        o.x += nx * depth; o.y += ny * depth;
+        if (o.vx !== undefined) { const vn = o.vx * nx + o.vy * ny; if (vn < 0) { o.vx -= vn * nx; o.vy -= vn * ny; } }
+        hit = moved = true;
+      }
+      if (!moved) break;
+    }
+    return hit;
+  }
+
   /** Push the car out of anything it overlaps and take away the speed into it. Returns true on contact. */
   resolve(car, dt = 1 / 240) {
     let hit = false, nxSum = 0, nySum = 0;

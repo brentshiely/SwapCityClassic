@@ -82,7 +82,7 @@ export class CarView {
     makeCarTexture(scene);
     const size = (CAR.length * TEX_PPM + PAD * 2) / TEX_PPM;
     const wh = (CAR.width * TEX_PPM + PAD * 2) / TEX_PPM;
-    this.size = size; this.wh = wh;
+    this.size = size; this.wh = wh; this.defaultSize = size; this.defaultWh = wh;
     this.shadow = scene.add.image(0, 0, 'car_shadow').setDisplaySize(size, wh).setDepth(4);
     this.body = scene.add.image(0, 0, 'car_body').setDisplaySize(size, wh).setDepth(5);
     this.brake = scene.add.image(0, 0, 'car_brake').setDisplaySize(size, wh).setDepth(5).setVisible(false);
@@ -102,6 +102,15 @@ export class CarView {
     }
     this.stamp = scene.add.image(0, 0, 'skid').setVisible(false);
     this.last = null;
+  }
+
+  /** the car the player is in: null = the starting sedan, or {type, colorIndex, size, wh} for a stolen one (the traffic's textures) */
+  setModel(m) {
+    this.body.setTexture(m ? `npc_${m.type}_${m.colorIndex}` : 'car_body');
+    this.brake.setTexture(m ? `npc_brake_${m.type}` : 'car_brake');
+    this.shadow.setTexture(m ? `npc_shadow_${m.type}` : 'car_shadow');
+    this.size = m ? m.size : this.defaultSize; this.wh = m ? m.wh : this.defaultWh;
+    this.shownLayer = undefined; // re-apply the sizes on the next update
   }
 
   /** @param persp {cx, cy, H} the middle of the screen and camera height: a car on a bridge is above the ground and is drawn as such */

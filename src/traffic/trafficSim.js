@@ -240,6 +240,9 @@ export class TrafficSim {
         }
       }
       if (player && (player.layer | 0) === (c.layer | 0) && this.hits(player, x, y, rMe)) return { gap: d - c.length / 2, who: 'player' };
+      // the player's parked car (while they are on foot) and the player walking: cars stop for both
+      if (this.obstacles) for (const ob of this.obstacles) if ((ob.layer | 0) === (c.layer | 0) && this.hits(ob, x, y, rMe)) return { gap: d - c.length / 2, who: 'player' };
+      if (this.walkers) for (const p of this.walkers) if ((p.layer | 0) === (c.layer | 0) && Math.hypot(p.x - x, p.y - y) < rMe + 0.9) return { gap: d - c.length / 2, who: 'player' };
     }
     return null;
   }

@@ -21,6 +21,8 @@ import { TrafficView } from '../traffic/trafficView.js';
 import { PedSim } from '../peds/pedSim.js';
 import { PedView } from '../peds/pedView.js';
 import { findStart } from '../world/start.js';
+import { PlayerController } from '../player/playerController.js';
+import { MissionManager } from '../missions/missions.js';
 
 const STEP = PHYSICS_STEP; // fixed physics step
 
@@ -100,6 +102,15 @@ export class WorldScene extends Phaser.Scene {
     this.trafficView = new TrafficView(this, this.traffic);
     this.pedView = new PedView(this, this.peds);
     this.input2 = new DriveInput(this);
+    this.player = new PlayerController(this);
+    this.keyM = this.input.keyboard.addKey('M');
+    // missions: cash and finished missions are kept in this browser
+    this.missions = new MissionManager(this.world, {
+      load: () => { try { return JSON.parse(localStorage.getItem('swapcityclassic.missions.v1') ?? 'null'); } catch { return null; } },
+      save: (s) => { try { localStorage.setItem('swapcityclassic.missions.v1', JSON.stringify(s)); } catch { /* not remembered: fine */ } },
+    });
+    this.markers = this.add.graphics().setDepth(3.2); // the mission phone and the target
+    this.scoreEl = document.getElementById('score'); this.missionEl = document.getElementById('mission');
     this.acc = 0;
     this.applySettings();
     this.camX = this.car.x; this.camY = this.car.y; this.camZoom = this.settings.zoomNear;
@@ -166,19 +177,24 @@ export class WorldScene extends Phaser.Scene {
 
     const dt = Math.min(delta / 1000, 0.05);
     const car = this.car;
-    if (this.input2.resetPressed()) { car.reset(this.start.x, this.start.y, this.start.heading); this.layers.reset(0); this.camX = car.x; this.camY = car.y; }
-    car.layer = this.layers.update(car.x, car.y, car.heading); // on a bridge, under it, or in a tunnel
-    // a street that runs under a building (a garage over a street, a tunnel that ends inside one): while the car is ON that street and its
-    // nose is in the building, the building's walls do not stop it
-    const nose = { x: car.x + Math.cos(car.heading) * 3, y: car.y + Math.sin(car.heading) * 3 };
-    car.ghost = this.layers.onRoad && (this.collision.insideSolid(car.x, car.y) || this.collision.insideSolid(nose.x, nose.y));
+    if (this.input2.resetPressed()) { car.reset(this.start.x, this.start.y, this.start.heading); this.layers.reset(0); this.camX = car.x; this.camY = car.y; if (!this.player.inCar) this.player.enterCar(); }
+    const inCar = this.player.inCar;
+    if (inCar) {
+      car.layer = this.layers.update(car.x, car.y, car.heading); // on a bridge, under it, or in a tunnel
+      // a street that runs under a building (a garage over a street, a tunnel that ends inside one): while the car is ON that street and its
+      // nose is in the building, the building's walls do not stop it
+      const nose = { x: car.x + Math.cos(car.heading) * 3, y: car.y + Math.sin(car.heading) * 3 };
+      car.ghost = this.layers.onRoad && (this.collision.insideSolid(car.x, car.y) || this.collision.insideSolid(nose.x, nose.y));
+    }
+    this.player.update(dt); // E (get out / in / take a car), walking, the pistol
+    const me = this.player.focus(); // the car, or the person on foot
 
-    // tiles around the car; if the one under it has not arrived yet (a slow connection), the car waits rather than driving through buildings
-    this.world.update(car.x, car.y);
-    const tileReady = this.world.isLoaded(car.x, car.y);
+    // tiles around the player; if the one under them has not arrived yet (a slow connection), they wait rather than walk through buildings
+    this.world.update(me.x, me.y);
+    const tileReady = this.world.isLoaded(me.x, me.y);
 
     // fixed-step physics so handling is identical at any frame rate
-    if (tileReady && (!this.stopAt || this.simTime < this.stopAt)) {
+    if (this.player.inCar && tileReady && (!this.stopAt || this.simTime < this.stopAt)) {
       this.acc += dt;
       while (this.acc >= STEP) {
         car.step(this.input2.read(STEP), STEP);
@@ -192,9 +208,9 @@ export class WorldScene extends Phaser.Scene {
 
     // camera: look ahead in the direction of travel, ease out as the car speeds up
     const k = 1 - Math.exp(-6 * dt);
-    this.camX += (car.x + car.vx * this.settings.lookahead - this.camX) * k;
-    this.camY += (car.y + car.vy * this.settings.lookahead - this.camY) * k;
-    const zoomTarget = Phaser.Math.Linear(this.settings.zoomNear, this.settings.zoomFar, Math.min(1, car.speed / Math.min(CAR.vMax, 45))); // fully zoomed out from 45 m/s (100 mph) up
+    this.camX += (me.x + me.vx * this.settings.lookahead - this.camX) * k;
+    this.camY += (me.y + me.vy * this.settings.lookahead - this.camY) * k;
+    const zoomTarget = Phaser.Math.Linear(this.settings.zoomNear, this.settings.zoomFar, Math.min(1, me.speed / Math.min(CAR.vMax, 45))); // fully zoomed out from 45 m/s (100 mph) up
     this.camZoom += (zoomTarget - this.camZoom) * (1 - Math.exp(-2.5 * dt));
     this.applyCamera();
     const H = cameraHeight(this.settings.camHeight, this.settings.zoomNear, this.camZoom);
@@ -203,20 +219,62 @@ export class WorldScene extends Phaser.Scene {
     this.bridges.update(this.camX, this.camY, cam.width / (2 * this.camZoom), cam.height / (2 * this.camZoom), H);
     this.buildings.update(this.camX, this.camY, this.camZoom, cam.width, cam.height, H);
     this.skyways.update(this.camX, this.camY, this.camZoom, cam.width, cam.height, H);
-    this.look.update(this.camX, this.camY, H, this.camZoom, cam.width, cam.height, layerZ(car.layer | 0));
+    this.look.update(this.camX, this.camY, H, this.camZoom, cam.width, cam.height, layerZ(me.layer));
 
     // traffic: cars spawn only outside what the player can see
     const view = { cx: this.camX, cy: this.camY, hw: cam.width / (2 * this.camZoom), hh: cam.height / (2 * this.camZoom) };
-    if (this.trafficOn && (!this.stopAt || this.simTime < this.stopAt)) this.traffic.update(dt, { x: car.x, y: car.y, heading: car.heading }, view);
+    if (this.trafficOn && (!this.stopAt || this.simTime < this.stopAt)) this.traffic.update(dt, this.player.inCar ? { x: car.x, y: car.y, heading: car.heading, layer: car.layer | 0 } : { x: me.x, y: me.y, heading: me.heading, layer: me.layer, length: 0.7, width: 0.7 }, view);
     this.trafficView.update(view, { cx: this.camX, cy: this.camY, H });
     if (this.pedsOn && (!this.stopAt || this.simTime < this.stopAt)) {
-      const touched = this.peds.update(dt, { x: car.x, y: car.y, vx: car.vx, vy: car.vy, heading: car.heading }, view, this.blockedFn);
-      if (touched) { const k = 0.985 ** touched; car.vx *= k; car.vy *= k; } // a nudge barely slows the car
+      const touched = this.peds.update(dt, { x: me.x, y: me.y, vx: me.vx, vy: me.vy, heading: me.heading }, view, this.blockedFn);
+      if (touched && this.player.inCar) { const k = 0.985 ** touched; car.vx *= k; car.vy *= k; } // a nudge barely slows the car
     }
     this.pedView.update();
 
-    this.navHud.update({ x: car.x, y: car.y, vx: car.vx, vy: car.vy, heading: car.heading });
-    this.hudText(`${Math.round(car.speed * 2.23694)} mph (${Math.round(car.speed * 3.6)} km/h)  |  ${this.traffic.cars.length} cars, ${this.peds.peds.length} people  |  ${this.look.label}`, '↑/W gas   ↓/S brake + reverse   ←→/AD steer   Space handbrake   R restart   T settings   G scenery');
+    this.navHud.update({ x: me.x, y: me.y, vx: me.vx, vy: me.vy, heading: me.heading });
+    this.updateMissions(dt, me);
+    this.hudText(`${this.player.inCar ? `${Math.round(car.speed * 2.23694)} mph (${Math.round(car.speed * 3.6)} km/h)` : `on foot, ${this.player.gun.reloading > 0 ? 'reloading' : `${this.player.gun.ammo} rounds`}`}  |  ${this.traffic.cars.length} cars, ${this.peds.peds.length} people  |  ${this.look.label}`, this.player.inCar ? '↑/W gas   ↓/S brake + reverse   ←→/AD steer   Space handbrake   E get out   R restart   T settings   G scenery' : 'WASD/arrows walk   Shift run   Space or click shoot   E get in / take a car   M mission   R restart car');
+  }
+
+  /** missions: the phone to answer, the objective, the target marker, cash */
+  updateMissions(dt, me) {
+    const m = this.missions, g = this.markers;
+    if (Phaser.Input.Keyboard.JustDown(this.keyM)) {
+      if (m.active) m.abandon();
+      else { const o = m.offerAt(me.x, me.y); if (o) m.start(o, { kills: this.player.kills }); }
+    }
+    m.update(dt, { x: me.x, y: me.y, inCar: this.player.inCar, stolen: this.player.stolen && this.player.inCar, kills: this.player.kills });
+    g.clear();
+    const t = this.time.now / 1000, pulse = 1 + 0.12 * Math.sin(t * 5);
+    const ring = (x, y, r, color) => { g.lineStyle(0.5, color, 0.95); g.strokeCircle(x, y, r * pulse); g.fillStyle(color, 0.16); g.fillCircle(x, y, r * pulse); };
+    const offer = m.active ? null : m.nextOffer();
+    if (offer) ring(offer.spot.x, offer.spot.y, 3.4, 0xffd84a); // the phone: a yellow ring
+    const obj = m.objective();
+    if (obj?.target) {
+      const st = m.active.steps[m.step];
+      ring(obj.target.x, obj.target.y, st.radius ?? 4, 0xff5a9a);
+      // an arrow near the player pointing at the target
+      const dx = obj.target.x - me.x, dy = obj.target.y - me.y, d = Math.hypot(dx, dy);
+      if (d > 14) {
+        const a = Math.atan2(dy, dx), ax = me.x + Math.cos(a) * 7, ay = me.y + Math.sin(a) * 7;
+        g.fillStyle(0xff5a9a, 0.95);
+        g.fillTriangle(ax + Math.cos(a) * 1.6, ay + Math.sin(a) * 1.6, ax + Math.cos(a + 2.5) * 1.1, ay + Math.sin(a + 2.5) * 1.1, ax + Math.cos(a - 2.5) * 1.1, ay + Math.sin(a - 2.5) * 1.1);
+      }
+    }
+    // words
+    const el = this.missionEl;
+    let html = '', cls = '';
+    if (m.message) { html = m.message.text; cls = m.message.good ? 'good' : m.message.bad ? 'bad' : ''; }
+    else if (obj) {
+      const dist = obj.target ? `${Math.round(Math.hypot(obj.target.x - me.x, obj.target.y - me.y))} m` : '';
+      html = `<b>${obj.title}</b> (${obj.step}/${obj.steps}): ${obj.text}${dist ? `  ·  ${dist}` : ''}${obj.timeLeft !== null ? `  ·  ${Math.ceil(obj.timeLeft)} s` : ''}   <small>(M abandons)</small>`;
+    } else if (offer && m.offerAt(me.x, me.y)) html = `<b>${offer.title}</b>: ${offer.brief}   <b>Press M to take the job</b>`;
+    if (html !== this.missionHtml || cls !== this.missionCls) { this.missionHtml = html; this.missionCls = cls; el.innerHTML = html; el.className = cls; el.style.display = html ? 'block' : 'none'; }
+    const cash = `$${m.cash.toLocaleString('en-US')}`;
+    if (cash !== this.cashShown || this.killsShown !== this.player.kills) {
+      this.cashShown = cash; this.killsShown = this.player.kills;
+      this.scoreEl.innerHTML = `${cash}${this.player.kills ? `<small>${this.player.kills} down</small>` : ''}`;
+    }
   }
 
   hudText(left, controls) {

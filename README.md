@@ -13,7 +13,8 @@ The story board is `design/BACKLOG.md` (the drag-to-reorder version lives in the
 `release/SwapCityClassic.html` is ONE self-contained file (about 1.3 MB). Copy it anywhere, double-click it,
 or drag it onto Chrome. No server, no internet, nothing else to copy.
 
-Controls: arrows or WASD to drive, Space = handbrake, R = restart.
+Controls: arrows or WASD to drive, Space = handbrake, R = restart, **T = settings panel** (camera zoom,
+top speed, grip, traffic, crowd... changes live and is remembered in your browser).
 Address-bar extras (after the file name): `?cars=30` `?peds=150` `?notraffic` `?nopeds` `?free` `?debug`
 `?seed=7` (same traffic every time) `?autopilot` (scripted drive, for testing).
 
@@ -27,6 +28,14 @@ Address-bar extras (after the file name): `?cars=30` `?peds=150` `?notraffic` `?
     npm run check-offline  # proves the build makes no network request (needs Google Chrome)
 
 `node tools/fetch_osm.mjs` downloads fresh OpenStreetMap data (needs internet; not part of the game).
+
+## Adding a setting to the T panel
+
+The panel is built from a list, so a new slider is one entry:
+
+1. `src/settings.js`: add the default to `DEFAULTS` and an item (`key`, `label`, `unit`, `min`, `max`, `step`, `hint`)
+   to a group in `SPEC` (or a new group). The panel, saving, and "Reset all" pick it up automatically.
+2. `WorldScene.applySettings()` (src/scenes/WorldScene.js): push the value into whatever uses it.
 
 ## Credits
 

@@ -7,6 +7,16 @@
   <style>
     html, body { margin: 0; height: 100%; background: #111; overflow: hidden; }
     #game { width: 100%; height: 100%; }
+    #tune { position: fixed; top: 8px; right: 8px; width: 290px; max-height: calc(100% - 40px); overflow-y: auto; box-sizing: border-box; padding: 10px 12px 12px; background: rgba(16, 19, 21, 0.88); color: #dfe4e7; font: 12px/1.35 Menlo, monospace; border: 1px solid #38424a; border-radius: 8px; }
+    #tune[hidden] { display: none; }
+    #tune h3 { margin: 0 0 6px; font-size: 13px; } #tune h3 small { color: #8a959c; font-weight: normal; margin-left: 6px; }
+    #tune h4 { margin: 12px 0 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #e6ac00; }
+    #tune .row { display: block; margin: 7px 0; } #tune .top { display: flex; justify-content: space-between; gap: 8px; }
+    #tune input[type=range] { width: 100%; margin: 3px 0 0; accent-color: #e6ac00; }
+    #tune small { color: #8a959c; } #tune .presets, #tune .foot { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+    #tune button { font: inherit; padding: 4px 8px; background: #26303a; color: #dfe4e7; border: 1px solid #45525d; border-radius: 5px; cursor: pointer; }
+    #tune button:hover { background: #33404b; }
+    #tune textarea { width: 100%; box-sizing: border-box; margin-top: 6px; background: #0e1113; color: #9fb0ba; border: 1px solid #38424a; border-radius: 5px; font: 10px/1.3 Menlo, monospace; resize: none; }
     #attrib { position: fixed; right: 10px; bottom: 6px; margin: 0; color: rgba(230, 234, 236, 0.78); font: 11px/1.3 Menlo, monospace; text-align: right; pointer-events: none; text-shadow: 0 1px 2px #000, 0 0 3px #000; }
     #hud { position: fixed; left: 10px; top: 8px; margin: 0; color: #cfd5d9; font: 12px/1.5 Menlo, monospace; white-space: pre; pointer-events: none; text-shadow: 0 1px 2px #000; }
   </style>

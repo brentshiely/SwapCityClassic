@@ -1,7 +1,9 @@
 import Phaser from 'phaser';
 import map from '../../data/map.json';
 import { buildGround } from '../render/ground.js';
-import { BuildingRenderer } from '../render/buildings.js';
+import { BuildingRenderer, RENDER } from '../render/buildings.js';
+import { loadSettings, saveSettings } from '../settings.js';
+import { TuningPanel } from '../ui/tuningPanel.js';
 import { attachFreeCamera, startFromHash } from '../camera/freeCamera.js';
 import { Car, CAR, PHYSICS_STEP } from '../vehicles/carPhysics.js';
 import { CollisionWorld } from '../world/collision.js';
@@ -14,9 +16,6 @@ import { PedView } from '../peds/pedView.js';
 import { findStart } from '../world/start.js';
 
 const STEP = PHYSICS_STEP; // fixed physics step
-const ZOOM_NEAR = 20; // px per metre when slow
-const ZOOM_FAR = 12; // px per metre at top speed
-const LOOKAHEAD = 0.45; // seconds of travel the camera looks ahead
 
 // The game world. You drive a car; `?free` gives the old free-look camera instead.
 export class WorldScene extends Phaser.Scene {
@@ -46,10 +45,16 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
 
+    // live settings (press T): the camera, driving and world numbers, remembered in this browser
+    this.settings = loadSettings();
+    this.tuning = new TuningPanel(this.settings, (st) => { saveSettings(st); this.applySettings(); });
+    if (params.has('tune')) this.tuning.show();
     this.start = findStart(map);
     this.car = new Car(this.start.x, this.start.y, this.start.heading);
     this.collision = new CollisionWorld(map);
     this.trafficOn = !params.has('notraffic');
+    this.urlCars = Number(params.get('cars')) || null; // address-bar values win over the saved settings
+    this.urlPeds = Number(params.get('peds')) || null;
     const seed = Number(params.get('seed')) || Math.floor(Math.random() * 1e6);
     this.traffic = new TrafficSim(map, { count: Number(params.get('cars')) || 16, seed });
     if (this.trafficOn) this.traffic.fill(null, this.car);
@@ -66,10 +71,20 @@ export class WorldScene extends Phaser.Scene {
     this.pedView = new PedView(this, this.peds);
     this.input2 = new DriveInput(this);
     this.acc = 0;
-    this.camX = this.car.x; this.camY = this.car.y; this.camZoom = ZOOM_NEAR;
+    this.applySettings();
+    this.camX = this.car.x; this.camY = this.car.y; this.camZoom = this.settings.zoomNear;
     this.applyCamera();
     // keep the same map spot centred if the window is resized
     this.scale.on('resize', () => this.applyCamera());
+  }
+
+  /** push the settings into the parts of the game that use them */
+  applySettings() {
+    const st = this.settings;
+    Object.assign(CAR, { vMax: st.vMax, accel: st.accel, grip: st.grip, handbrakeGrip: st.handbrakeGrip, turnMax: st.turnMax });
+    RENDER.lean = st.lean;
+    this.traffic.count = this.urlCars ?? st.cars;
+    this.peds.count = this.urlPeds ?? st.peds;
   }
 
   applyCamera() {
@@ -107,9 +122,9 @@ export class WorldScene extends Phaser.Scene {
 
     // camera: look ahead in the direction of travel, ease out as the car speeds up
     const k = 1 - Math.exp(-6 * dt);
-    this.camX += (car.x + car.vx * LOOKAHEAD - this.camX) * k;
-    this.camY += (car.y + car.vy * LOOKAHEAD - this.camY) * k;
-    const zoomTarget = Phaser.Math.Linear(ZOOM_NEAR, ZOOM_FAR, Math.min(1, car.speed / CAR.vMax));
+    this.camX += (car.x + car.vx * this.settings.lookahead - this.camX) * k;
+    this.camY += (car.y + car.vy * this.settings.lookahead - this.camY) * k;
+    const zoomTarget = Phaser.Math.Linear(this.settings.zoomNear, this.settings.zoomFar, Math.min(1, car.speed / CAR.vMax));
     this.camZoom += (zoomTarget - this.camZoom) * (1 - Math.exp(-2.5 * dt));
     this.applyCamera();
     this.buildings.update(this.camX, this.camY, this.camZoom, cam.width, cam.height);
@@ -124,7 +139,7 @@ export class WorldScene extends Phaser.Scene {
     }
     this.pedView.update();
 
-    this.hudText(`${Math.round(car.speed * 3.6)} km/h  |  ${this.traffic.cars.length} cars, ${this.peds.peds.length} people`, '↑/W gas   ↓/S brake + reverse   ←→/AD steer   Space handbrake   R restart');
+    this.hudText(`${Math.round(car.speed * 3.6)} km/h  |  ${this.traffic.cars.length} cars, ${this.peds.peds.length} people`, '↑/W gas   ↓/S brake + reverse   ←→/AD steer   Space handbrake   R restart   T settings');
   }
 
   hudText(left, controls) {

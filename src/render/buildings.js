@@ -5,7 +5,8 @@ import { mulberry32 } from './rng.js';
 // camera is looking at, in proportion to its height, and the walls facing that point show between
 // the footprint and the roof. Everything is redrawn each frame but only for buildings in view.
 
-const LEAN = 0.003; // roof shift, as a fraction of (distance from camera centre x effective height)
+// roof shift, as a fraction of (distance from camera centre x effective height); the settings panel changes it
+export const RENDER = { lean: 0.003 };
 const LIGHT = Math.atan2(-0.8, -0.6); // light comes from the upper left
 const PALETTE = [
   { roof: [139, 144, 150], wall: [104, 110, 116] }, // concrete
@@ -76,7 +77,7 @@ export class BuildingRenderer {
   }
 
   drawBuilding(g, b, cx, cy, zoom) {
-    const k = LEAN * b.eh;
+    const k = RENDER.lean * b.eh;
     for (let i = 0; i < b.pts.length; i++) {
       const p = b.pts[i], r = b.roofPts[i];
       r.x = p.x + (p.x - cx) * k;

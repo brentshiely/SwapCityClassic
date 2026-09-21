@@ -64,6 +64,14 @@ bridge deck under ours is Google's real mesh, drawn over by our asphalt deck so 
 
 ## Google Earth mode
 
+**Terrain.** Google's picture is on real terrain (the river valley is ~35 m below downtown), so the game bakes the LiDAR ground model
+(`python3 tools/bake_terrain.py --lidar <folder>` -> `data/city/terrain.json`, 8 m grid, height above the ground at the origin) and
+`src/world/terrain.js` serves it: the Google camera is H above the ground UNDER the screen's middle, the overlay meshes follow the terrain, and
+a small shader addition to Google's materials (`patchGoogleMaterials`) drops fragments less than 3.7 m above the local ground in the "overhead"
+pass. Google mode is only used where the terrain grid exists (downtown). **Bridges are OpenStreetMap's:** Google's own bridge deck, rails and
+piers are dropped by a mask of the bridge footprints (whole width over water, the road plus 4.5 m on land), our deck is drawn instead, and
+our own (dark, Google-tinted) water is laid under the bridge where Google has none.
+
 Online, the ground under the cars can be live Google Photorealistic 3D Tiles (`src/earth/`); offline it falls back to
 the drawn OpenStreetMap + LiDAR city. Put a Map Tiles API key in `secrets/google_maps_key.txt` (gitignored) before
 `npm run build`; with no key the game is offline-only. The `Scenery` choice in the T panel (Auto / Google Earth /

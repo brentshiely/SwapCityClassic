@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { paintRoadLayer, paintTunnels, paintPortals } from '../render/ground.js';
-import { asphaltTile, paverTile, grassTile } from '../render/textures.js';
+import { asphaltTile, paverTile, grassTile, waterTile } from '../render/textures.js';
 
 // Our ground drawn OVER Google's picture (paver sidewalks everywhere, parks and parking lots, then the road surface), so the
 // cars and vans photographed on Google's streets and kerbs are covered and only our own traffic and people are on it. Google
@@ -19,9 +19,11 @@ export const OVERLAY_LIFT = 3.5;
 // Anything of Google's picture higher than this above the street (mast arms, signal heads, signs, wires, tree canopies, skyways,
 // building walls) is drawn a second time ABOVE the cars and people (earthLayer.js), so traffic passes under it.
 export const OVERHEAD_FROM = 3.7;
+// how much wider than the road's lanes the cut-away of Google's bridge is over water (the real bridge also carries sidewalks, other lanes and rails)
+export const BRIDGE_OVER_WATER = 26;
 const PPM = 12, SLAB_METRES = 2.5, MARGIN = 45; // the same as ground.js: a texture pixel is 1/12 m; the ground reaches 45 m past the playable map
 // metres covered by one repeat of each texture, as in the offline look
-const TEXTURE_METRES = { asphalt: 256 / PPM, alley: 256 / PPM, lot: 256 / PPM, paver: (Math.round(SLAB_METRES * PPM) * 2) / PPM, grass: 128 / PPM };
+const TEXTURE_METRES = { asphalt: 256 / PPM, alley: 256 / PPM, lot: 256 / PPM, paver: (Math.round(SLAB_METRES * PPM) * 2) / PPM, grass: 128 / PPM, water: 256 / PPM };
 
 // ---- a canvas 2D lookalike that records geometry instead of pixels ----
 class Recorder {
@@ -153,15 +155,21 @@ const makeTextures = () => {
     return t;
   };
   const canvasTex = (c) => { const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; };
-  return { asphalt: tex(11), alley: tex(37, [64, 76, 78]), lot: tex(23, [58, 66, 70]), paver: canvasTex(paverTile(Math.round(SLAB_METRES * PPM))), grass: canvasTex(grassTile()) };
+  return { asphalt: tex(11), alley: tex(37, [64, 76, 78]), lot: tex(23, [58, 66, 70]), paver: canvasTex(paverTile(Math.round(SLAB_METRES * PPM))), grass: canvasTex(grassTile()), water: canvasTex(waterTile()) };
 };
 
 /** the meshes for the ground in one box: `view` is what World.view(box) returns */
-function buildBoxGroup(view, box, textures) {
+function buildBoxGroup(view, box, textures, terrain = null) {
   const rec = new Recorder({ x0: box.x0 - 4, y0: box.y0 - 4, x1: box.x1 + 4, y1: box.y1 + 4 });
   // the ground under the roads: paver sidewalk everywhere in the box (a hair over, so neighbouring boxes never leave a seam), then parks and parking lots
   const e = 0.15, x0 = box.x0 - e, y0 = box.y0 - e, x1 = box.x1 + e, y1 = box.y1 + e;
-  rec.raw(0, 'paver', [[x0, y0], [x1, y0], [x1, y1], [x0, y0], [x1, y1], [x0, y1]]);
+  // (a grid of 8 m squares, so the paving follows the terrain: heights are set per vertex below)
+  const pav = [], N = Math.max(1, Math.ceil((x1 - x0) / 8));
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+    const ax = x0 + ((x1 - x0) * i) / N, bx = x0 + ((x1 - x0) * (i + 1)) / N, ay = y0 + ((y1 - y0) * j) / N, by = y0 + ((y1 - y0) * (j + 1)) / N;
+    pav.push([ax, ay], [bx, ay], [bx, by], [ax, ay], [bx, by], [ax, by]);
+  }
+  rec.raw(0, 'paver', pav);
   for (const a of view.areas) {
     const contour = a.points.map(([x, y]) => new THREE.Vector2(x, y));
     const tris = THREE.ShapeUtils.triangulateShape(contour, []);
@@ -175,7 +183,9 @@ function buildBoxGroup(view, box, textures) {
   for (const b of [...rec.batches.values()].sort((p, q) => p.rank - q.rank)) {
     const n = b.pos.length / 2, position = new Float32Array(n * 3), uv = b.pattern ? new Float32Array(n * 2) : null;
     for (let i = 0; i < n; i++) {
-      position[i * 3] = b.pos[i * 2]; position[i * 3 + 1] = 0; position[i * 3 + 2] = b.pos[i * 2 + 1]; // game (x, y) -> scene (x, 0, z)
+      position[i * 3] = b.pos[i * 2]; position[i * 3 + 2] = b.pos[i * 2 + 1]; // game (x, y) -> scene (x, height of the ground there, z)
+      // each pass sits a little above the one before (15 cm): on sloping ground two passes sample the terrain at slightly different spots, and depth offsets alone cannot keep them in order
+      position[i * 3 + 1] = (terrain ? terrain.height(b.pos[i * 2], b.pos[i * 2 + 1]) : 0) + b.rank * 0.15;
       if (uv) { const m = TEXTURE_METRES[b.pattern]; uv[i * 2] = b.pos[i * 2] / m; uv[i * 2 + 1] = b.pos[i * 2 + 1] / m; }
     }
     const g = new THREE.BufferGeometry();
@@ -209,6 +219,38 @@ export class RoadOverlay {
     this.lift = OVERLAY_LIFT;
     this.triangles = 0;
     this.group.add(this.waterCutOut());
+    this.group.add(this.waterUnderBridges());
+  }
+
+  /**
+   * Under a bridge (over water) Google's picture is cut away with the deck, and there is no water under it in Google's picture to show: our
+   * own water is laid there, a strip along the bridge a little wider than the deck, only where the road is over water.
+   */
+  waterUnderBridges() {
+    const pos = [], uv = [], T = this.textures, m = 256 / PPM, terr = this.world.terrain;
+    const y = (x, z) => (terr ? terr.height(x, z) : 0) + 2.0;
+    const push = (x, z) => { pos.push(x, y(x, z), z); uv.push(x / m, z / m); };
+    for (const r of this.world.roads) {
+      if (r.layer < 1 || r.layer > 3) continue;
+      const half = r.width / 2 + BRIDGE_OVER_WATER / 2;
+      for (let i = 0; i < r.points.length - 1; i++) {
+        const a = r.points[i], b = r.points[i + 1], len = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(len / 3));
+        const dx = (b[0] - a[0]) / len, dy = (b[1] - a[1]) / len, nx = -dy * half, ny = dx * half;
+        for (let k = 0; k < n; k++) {
+          const t0 = k / n, t1 = (k + 1) / n, mx = a[0] + (b[0] - a[0]) * (t0 + t1) / 2, my = a[1] + (b[1] - a[1]) * (t0 + t1) / 2;
+          if (!this.world.inWater(mx, my)) continue;
+          const p0 = [a[0] + (b[0] - a[0]) * t0, a[1] + (b[1] - a[1]) * t0], p1 = [a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1];
+          const q = [[p0[0] + nx, p0[1] + ny], [p1[0] + nx, p1[1] + ny], [p1[0] - nx, p1[1] - ny], [p0[0] - nx, p0[1] - ny]];
+          for (const k2 of [0, 1, 2, 0, 2, 3]) push(q[k2][0], q[k2][1]);
+        }
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
+    const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: T.water, color: new THREE.Color(0.85, 0.36, 0.47), side: THREE.DoubleSide })); // tinted to Google's dark river water
+    mesh.renderOrder = 0.6; mesh.frustumCulled = false;
+    return mesh;
   }
 
   /**
@@ -221,7 +263,7 @@ export class RoadOverlay {
     for (const w of this.world.water ?? []) {
       const rings = [w.outer, ...w.holes], verts = rings.flat().map(([x, y]) => new THREE.Vector2(x, y));
       const faces = THREE.ShapeUtils.triangulateShape(rings[0].map(([x, y]) => new THREE.Vector2(x, y)), w.holes.map((h) => h.map(([x, y]) => new THREE.Vector2(x, y))));
-      for (const f of faces) for (const i of f) pos.push(verts[i].x, 0.3, verts[i].y);
+      for (const f of faces) for (const i of f) pos.push(verts[i].x, (this.world.terrain ? this.world.terrain.height(verts[i].x, verts[i].y) : 0) + 1.0, verts[i].y);
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
@@ -248,7 +290,7 @@ export class RoadOverlay {
       const T = w.T, box = { x0: tile.tx * T, y0: tile.ty * T, x1: (tile.tx + 1) * T, y1: (tile.ty + 1) * T };
       const view = w.view(box.x0 - 8, box.y0 - 8, box.x1 + 8, box.y1 + 8);
       view.portals = w.portalsIn(box.x0, box.y0, box.x1, box.y1);
-      const g = buildBoxGroup(view, box, this.textures);
+      const g = buildBoxGroup(view, box, this.textures, w.terrain);
       this.tiles.set(k, g);
       this.group.add(g);
     }

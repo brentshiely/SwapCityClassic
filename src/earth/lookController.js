@@ -66,7 +66,7 @@ export class LookController {
   /** should Google be running right now? (also records why not, for the on-screen label) */
   wanted() {
     if (!KEY) { this.reason = 'no Google key in this build'; return false; }
-    if (this.far) { this.reason = 'Google Earth is only lined up near downtown'; return false; }
+    if (this.far) { this.reason = 'Google Earth is only lined up over downtown'; return false; }
     if (this.failed) {
       // a failed launch is not forever: flight wifi comes and goes. Try again later (Auto and Google, never when Offline is chosen).
       const retry = this.preference() !== 'offline' && navigator.onLine && this.retries < MAX_RETRIES && performance.now() - this.failedAt >= RETRY_MS
@@ -105,7 +105,9 @@ export class LookController {
 
   /** call every frame with the game's camera: where it looks (game metres), camera height (m), pixels per metre, screen size */
   update(camX, camY, H, zoom, w, h, playerZ = 0) {
-    this.far = Math.hypot(camX, camY) > GOOGLE_RADIUS * (this.far ? 0.92 : 1); // a little hysteresis so the edge does not flicker
+    // Google mode only where the ground height is known (the LiDAR terrain grid covers downtown) or, without it, near downtown
+    const t = this.world?.terrain;
+    this.far = t ? !t.has(camX, camY) : Math.hypot(camX, camY) > GOOGLE_RADIUS * (this.far ? 0.92 : 1);
     const want = this.wanted();
     if (want) this.start();
     if (this.earth && performance.now() - this.startedAt > SESSION_MINUTES * 60000) { this.startedAt = performance.now(); countSession(); } // token renewal

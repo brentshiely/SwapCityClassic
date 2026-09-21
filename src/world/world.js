@@ -1,6 +1,7 @@
 import { insidePolygon, bboxOfPoints, Grid } from './grid2d.js';
 import { junctionInfo } from './geometry.js';
 import { computePortals } from './layers.js';
+import { Terrain } from './terrain.js';
 
 // The whole city as the game sees it: the road graph is loaded once (city.json), everything else (buildings, parks and lots,
 // sidewalks, crosswalks, skyways) arrives in 256 m tiles as the player moves. This class decides which tiles are wanted, fetches
@@ -36,6 +37,7 @@ export class World {
     this.meta = city.meta;
     this.roads = city.roads;
     this.graph = city.graph;
+    this.terrain = city.terrain ? new Terrain(city.terrain) : null; // ground height where the LiDAR ground model covers (Google mode)
     this.water = city.water ?? []; // rivers and lakes (water.json), set by main.js when the city has them
     this.T = city.meta.tileSize ?? 256;
     this.source = source;

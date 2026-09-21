@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { TilesRenderer } from '3d-tiles-renderer/three';
-import { RoadOverlay, OVERHEAD_FROM } from './roadOverlay.js';
+import { RoadOverlay, OVERHEAD_FROM, BRIDGE_OVER_WATER } from './roadOverlay.js';
 import { GoogleCloudAuthPlugin, GLTFExtensionsPlugin } from '3d-tiles-renderer/plugins';
 
 // Google Earth mode: Google's Photorealistic 3D Tiles drawn LIVE under the game, from a camera straight above the car.
@@ -56,7 +56,7 @@ export class EarthLayer {
     this.canvas = canvas;
     this.topCanvas = topCanvas;
     this.topCtx = topCanvas.getContext('2d');
-    this.overheadPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -OVERHEAD_FROM); // keeps everything higher than OVERHEAD_FROM
+    this.terrain = world.terrain; // ground height under the camera and everywhere (null: flat)
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(1);
     this.renderer.setClearColor(0x14181a, 1);
@@ -76,6 +76,7 @@ export class EarthLayer {
     this.scene.add(tiles.group);
     // our streets over Google's (covers the photographed cars; see roadOverlay.js)
     this.overlay = new RoadOverlay(world);
+    this.patchGoogleMaterials(world);
     const lift = Number(new URLSearchParams(location.search).get('roadlift'));
     if (lift > 0) this.overlay.setLift(lift);
     this.scene.add(this.overlay.group);
@@ -99,7 +100,86 @@ export class EarthLayer {
     this.onState?.('failed', reason);
   }
 
-  setOverheadFrom(y) { this.overheadPlane.constant = -y; }
+  setOverheadFrom(y) { this.uniforms.uMinAbove.value = y; this.overheadFrom = y; }
+
+  /**
+   * Google's materials get a small shader addition, all in game/scene coordinates (x, z = game x, y; y = height above the ground at the origin):
+   *  - uMinAbove: fragments less than that far above the LOCAL ground (the terrain model) are dropped. Pass 1 (what goes over the cars) sets it
+   *    to a bit more than a truck's height; pass 2 sets it far below, so nothing is dropped.
+   *  - the bridge mask: fragments more than a metre above the local ground inside the footprint of a bridge (OpenStreetMap's bridges are drawn
+   *    by us, so Google's deck, rails and piers there are dropped).
+   */
+  patchGoogleMaterials(world) {
+    const THREE_ = THREE, t = this.terrain;
+    this.terrainTex = t ? t.texture(THREE_) : null;
+    this.maskTex = new THREE.CanvasTexture(this.buildBridgeMask(world));
+    this.maskTex.minFilter = this.maskTex.magFilter = THREE.LinearFilter;
+    this.maskTex.flipY = false; // row 0 of the picture is the smallest game y, as in the shader's lookup
+    const M = this.maskInfo;
+    this.uniforms = {
+      uMinAbove: { value: -1e6 },
+      uTerrain: { value: this.terrainTex }, uTerrainOn: { value: t ? 1 : 0 },
+      uTerrainOrigin: { value: new THREE.Vector2(t?.minX ?? 0, t?.minY ?? 0) },
+      uTerrainInv: { value: new THREE.Vector2(t ? 1 / (t.w * t.cell) : 1, t ? 1 / (t.h * t.cell) : 1) },
+      uTerrainCell: { value: new THREE.Vector2(t ? t.cell : 1, t ? t.cell : 1) },
+      uMask: { value: this.maskTex }, uMaskOrigin: { value: new THREE.Vector2(M.x0, M.y0) }, uMaskInv: { value: new THREE.Vector2(1 / M.size, 1 / M.size) },
+      uMaskAbove: { value: 1.0 },
+    };
+    const U = this.uniforms, dims = t ? new THREE.Vector2(t.w, t.h) : new THREE.Vector2(1, 1);
+    const patch = (mat) => {
+      if (!mat || mat.userData.gpatched) return;
+      mat.userData.gpatched = true;
+      const prev = mat.onBeforeCompile;
+      mat.onBeforeCompile = (shader, renderer) => {
+        prev?.call(mat, shader, renderer);
+        Object.assign(shader.uniforms, U);
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', '#include <common>\nvarying vec3 vGWorld;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', `#include <common>
+varying vec3 vGWorld;
+uniform float uMinAbove; uniform sampler2D uTerrain; uniform float uTerrainOn; uniform vec2 uTerrainOrigin; uniform vec2 uTerrainInv; uniform vec2 uTerrainCell;
+uniform sampler2D uMask; uniform vec2 uMaskOrigin; uniform vec2 uMaskInv; uniform float uMaskAbove;`)
+          .replace('void main() {', `void main() {
+  {
+    vec2 tuv = (vGWorld.xz - uTerrainOrigin) * uTerrainInv + 0.5 * uTerrainCell * uTerrainInv;
+    float ground = uTerrainOn > 0.5 ? texture2D(uTerrain, tuv).r : 0.0;
+    float above = vGWorld.y - ground;
+    if (above < uMinAbove) discard;
+    vec2 muv = (vGWorld.xz - uMaskOrigin) * uMaskInv;
+    if (muv.x >= 0.0 && muv.x <= 1.0 && muv.y >= 0.0 && muv.y <= 1.0 && above > uMaskAbove && texture2D(uMask, muv).r > 0.5) discard;
+  }`);
+      };
+      mat.needsUpdate = true;
+    };
+    this.tiles.addEventListener('load-model', ({ scene }) => scene.traverse((o) => { if (o.isMesh) patch(o.material); }));
+  }
+
+  /** a black-and-white picture of where bridges are (a bit wider than the deck), over the area Google mode covers: 2.5 m per pixel */
+  buildBridgeMask(world) {
+    const size = 3900, px = 2.5, n = Math.ceil(size / px), c = document.createElement('canvas');
+    c.width = c.height = n;
+    const g = c.getContext('2d'), x0 = -size / 2, y0 = -size / 2;
+    this.maskInfo = { x0, y0, size };
+    g.fillStyle = '#000'; g.fillRect(0, 0, n, n);
+    g.strokeStyle = '#fff'; g.lineCap = 'butt'; g.lineJoin = 'round';
+    g.setTransform(1 / px, 0, 0, 1 / px, -x0 / px, -y0 / px);
+    for (const r of world.roads) {
+      if (r.layer < 1 || r.layer > 3 || Math.abs(r.points[0][0]) > size / 2 || Math.abs(r.points[0][1]) > size / 2) continue;
+      // over water the whole bridge goes (it carries sidewalks and other lanes we do not draw); on land only a little wider than the road,
+      // so buildings and trees beside a bridge's ends stay
+      for (let i = 0; i < r.points.length - 1; i++) {
+        const a = r.points[i], b = r.points[i + 1], len = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(len / 3));
+        for (let k = 0; k < n; k++) {
+          const t0 = k / n, t1 = (k + 1) / n, mx = a[0] + (b[0] - a[0]) * (t0 + t1) / 2, my = a[1] + (b[1] - a[1]) * (t0 + t1) / 2;
+          g.lineWidth = r.width + (world.inWater(mx, my) ? BRIDGE_OVER_WATER : 4.5);
+          g.beginPath(); g.moveTo(a[0] + (b[0] - a[0]) * t0, a[1] + (b[1] - a[1]) * t0); g.lineTo(a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1); g.stroke();
+        }
+      }
+    }
+    return c;
+  }
   setStreetsOver(on) { this.overlay.group.visible = on; }
   /** draw the overhead parts of the picture above the cars (on), or leave everything under them (off) */
   setOverhead(on) { this.overhead = on; if (!on) this.topCtx.clearRect(0, 0, this.w ?? 0, this.h ?? 0); }
@@ -122,8 +202,10 @@ export class EarthLayer {
     const cam = this.camera;
     cam.fov = (2 * Math.atan(h / (2 * H * zoom)) * 180) / Math.PI; // pixels per metre at the ground = h / (2 H tan(fov/2))
     cam.near = Math.max(2, H * 0.05); cam.far = H * 3 + 1500;
-    cam.position.set(camX, H, camY);
-    cam.lookAt(camX, 0, camY);
+    // the ground under the middle of the screen may be well below the game origin's ground (the river valley): the camera is H above THAT
+    const t0 = this.terrain ? this.terrain.height(camX, camY) : 0;
+    cam.position.set(camX, H + t0, camY);
+    cam.lookAt(camX, t0, camY);
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
     this.overlay.sync();
@@ -134,12 +216,12 @@ export class EarthLayer {
     if (this.overhead) {
       // pass 1: only what is higher than a truck, on a see-through background, copied to the canvas above the game
       this.overlay.group.visible = false;
-      r.clippingPlanes = [this.overheadPlane];
+      this.uniforms.uMinAbove.value = this.overheadFrom ?? OVERHEAD_FROM;
       r.setClearColor(0x000000, 0);
       r.render(this.scene, cam);
       this.topCtx.clearRect(0, 0, w, h);
       this.topCtx.drawImage(r.domElement, 0, 0, w, h);
-      r.clippingPlanes = [];
+      this.uniforms.uMinAbove.value = -1e6;
       r.setClearColor(0x14181a, 1);
       this.overlay.group.visible = overlayShown;
     }

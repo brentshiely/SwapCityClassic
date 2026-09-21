@@ -44,6 +44,8 @@ async function loadCity() {
     city.meta.roofPhotos = roofs;
     const wr = await fetch(`${CITY}/water.json`).catch(() => null); // rivers and lakes, if the city was baked with them
     city.water = wr && wr.ok ? ((await wr.json().catch(() => null))?.polygons ?? []) : [];
+    const tr = await fetch(`${CITY}/terrain.json`).catch(() => null); // ground height (downtown), used by Google mode
+    city.terrain = tr && tr.ok ? await tr.json().catch(() => null) : null;
     const lr = roofs ? await fetch(`${CITY}/roof_lean.json`).catch(() => null) : null; // the lean per region, once LiDAR has measured it
     city.meta.roofLean = lr && lr.ok ? await lr.json().catch(() => null) : null;
     source = fetchSource(CITY, roofs);

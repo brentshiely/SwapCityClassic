@@ -62,6 +62,15 @@ The pistol (`weapon.js`, Space or click, aim with the mouse) is a hitscan shot: 
 graph. Yellow rings are the phones (M to take the job), pink is the target. Cash and finished jobs are kept in localStorage.
 Tests: `tools/test_onfoot.mjs`, `tools/test_missions.mjs`.
 
+## Police and the wanted level
+
+Crimes add heat (`src/police/wanted.js`: a shot 4, a killing 30, taking a car 22); heat shows as 0-5 stars (20, 60, 120, 200, 300) and cools
+when no police car has been within 70 m for 7 s. `src/police/police.js` keeps 1, 2, 3, 5 or 6 police cars (by stars) coming: they are traffic
+cars with `police` set (`TrafficSim.spawnPolice`, out of view 90-260 m away); they drive 1.75x the limit, ignore the lights, and choose their
+turns by A* toward the player's nearest junction (`pursuitHop`), pulling up beside the target. A police car close to a player who is on foot or
+nearly stopped for 2.2 s arrests them: a fine (20% of cash, at least $100), the car and the stars are gone, back at the start
+(`WorldScene.busted`). At 0 stars the cars leave once nobody can see them. Test: `tools/test_police.mjs`.
+
 ## Water, bridges and tunnels (layers)
 
 `water.json` (`npm run fetch-water`, `npm run bake-water`: 262 polygons) is drawn into the ground chunks; the shore is a collision wall, so

@@ -23,6 +23,7 @@ import { PedView } from '../peds/pedView.js';
 import { findStart } from '../world/start.js';
 import { PlayerController } from '../player/playerController.js';
 import { MissionManager } from '../missions/missions.js';
+import { PoliceManager } from '../police/police.js';
 
 const STEP = PHYSICS_STEP; // fixed physics step
 
@@ -103,6 +104,7 @@ export class WorldScene extends Phaser.Scene {
     this.pedView = new PedView(this, this.peds);
     this.input2 = new DriveInput(this);
     this.player = new PlayerController(this);
+    this.police = new PoliceManager(this.traffic); // crimes raise the wanted level; police cars chase (traffic cars with `police` set)
     this.keyM = this.input.keyboard.addKey('M');
     // missions: cash and finished missions are kept in this browser
     this.missions = new MissionManager(this.world, {
@@ -232,8 +234,24 @@ export class WorldScene extends Phaser.Scene {
     this.pedView.update();
 
     this.navHud.update({ x: me.x, y: me.y, vx: me.vx, vy: me.vy, heading: me.heading });
+    if (this.trafficOn) {
+      const ev = this.police.update(dt, { x: me.x, y: me.y, vx: me.vx, vy: me.vy, layer: me.layer, inCar: this.player.inCar }, view);
+      if (ev === 'busted') this.busted();
+    }
     this.updateMissions(dt, me);
     this.hudText(`${this.player.inCar ? `${Math.round(car.speed * 2.23694)} mph (${Math.round(car.speed * 3.6)} km/h)` : `on foot, ${this.player.gun.reloading > 0 ? 'reloading' : `${this.player.gun.ammo} rounds`}`}  |  ${this.traffic.cars.length} cars, ${this.peds.peds.length} people  |  ${this.look.label}`, this.player.inCar ? '↑/W gas   ↓/S brake + reverse   ←→/AD steer   Space handbrake   E get out   R restart   T settings   G scenery' : 'WASD/arrows walk   Shift run   Space or click shoot   E get in / take a car   M mission   R restart car');
+  }
+
+  /** arrested: a fine, the car and the stars are gone, back to the start */
+  busted() {
+    const m = this.missions, fine = Math.min(m.cash, Math.max(100, Math.round(m.cash * 0.2)));
+    m.cash -= fine; m.persist(); m.abandon();
+    m.message = { text: `BUSTED!  Fine $${fine}. Your car is gone.`, t: 6, bad: true };
+    this.police.reset();
+    this.car.reset(this.start.x, this.start.y, this.start.heading); this.layers.reset(0);
+    this.carView.setModel(null); this.player.stolen = false;
+    if (!this.player.inCar) this.player.enterCar();
+    this.camX = this.car.x; this.camY = this.car.y;
   }
 
   /** missions: the phone to answer, the objective, the target marker, cash */
@@ -270,10 +288,12 @@ export class WorldScene extends Phaser.Scene {
       html = `<b>${obj.title}</b> (${obj.step}/${obj.steps}): ${obj.text}${dist ? `  ·  ${dist}` : ''}${obj.timeLeft !== null ? `  ·  ${Math.ceil(obj.timeLeft)} s` : ''}   <small>(M abandons)</small>`;
     } else if (offer && m.offerAt(me.x, me.y)) html = `<b>${offer.title}</b>: ${offer.brief}   <b>Press M to take the job</b>`;
     if (html !== this.missionHtml || cls !== this.missionCls) { this.missionHtml = html; this.missionCls = cls; el.innerHTML = html; el.className = cls; el.style.display = html ? 'block' : 'none'; }
-    const cash = `$${m.cash.toLocaleString('en-US')}`;
-    if (cash !== this.cashShown || this.killsShown !== this.player.kills) {
-      this.cashShown = cash; this.killsShown = this.player.kills;
-      this.scoreEl.innerHTML = `${cash}${this.player.kills ? `<small>${this.player.kills} down</small>` : ''}`;
+    const cash = `$${m.cash.toLocaleString('en-US')}`, stars = this.police.wanted.stars, hot = this.police.nearest < 70 && this.time.now % 600 < 300;
+    const starsKey = `${stars}${hot ? 'h' : ''}`;
+    if (cash !== this.cashShown || this.killsShown !== this.player.kills || starsKey !== this.starsShown) {
+      this.cashShown = cash; this.killsShown = this.player.kills; this.starsShown = starsKey;
+      const star = stars ? `<small style="color:${hot ? '#ff6a5a' : '#ffd84a'};font-size:20px;letter-spacing:2px">${'★'.repeat(stars)}${'☆'.repeat(5 - stars)}</small>` : '';
+      this.scoreEl.innerHTML = `${cash}${star}${this.player.kills ? `<small>${this.player.kills} down</small>` : ''}`;
     }
   }
 

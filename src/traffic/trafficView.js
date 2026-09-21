@@ -72,6 +72,17 @@ export class TrafficView {
     // traffic lights
     const g = this.g;
     g.clear();
+    // police lights: red and blue, alternating
+    const flash = Math.floor(sim.t * 6) % 2;
+    for (const c of sim.cars) {
+      if (!c.police || c.dead) continue;
+      const cs = Math.cos(c.heading), sn = Math.sin(c.heading);
+      for (const side of [-1, 1]) {
+        const on = (side > 0) === (flash === 0), x = c.x + cs * 0.2 - sn * 0.45 * side, y = c.y + sn * 0.2 + cs * 0.45 * side;
+        g.fillStyle(side > 0 ? 0xff3a2a : 0x3a6bff, on ? 0.35 : 0.08); g.fillCircle(x, y, on ? 2.6 : 1.4);
+        g.fillStyle(side > 0 ? 0xff7a6a : 0x7aa0ff, on ? 1 : 0.25); g.fillCircle(x, y, 0.32);
+      }
+    }
     const drawLamp = (l) => {
       const st = sim.signals.state(l.de, sim.t);
       g.fillStyle(0x15181a, 1); g.fillRoundedRect(l.x - 0.85, l.y - 0.85, 1.7, 1.7, 0.35);

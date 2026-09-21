@@ -15,6 +15,8 @@ writeFileSync('release/HOW TO PLAY.txt', `SwapCityClassic - how to play (works w
    E gets you out of the car; on foot: WASD/arrows walk, Shift runs, Space or a mouse click shoots the pistol (aim with the mouse),
    E beside your car gets back in, E beside somebody else's car takes it (they run). Yellow rings are phones: stand in one and press M
    to take a job (a pink ring and arrow show where to go); M again abandons it. Cash and finished jobs are remembered.
+   Crimes (shooting, killing, taking a car) earn stars; police cars chase you; if they catch you standing still you are BUSTED (a fine,
+   your car is gone, back to the start). Lose them for a while and the stars fade.
    The top of the screen shows the street you are on, your heading and the next street; the compass rose
    shows where true north is (the map is turned 30 degrees, so north is NOT straight up).
    T opens the SETTINGS panel: sliders for camera zoom, top speed, grip, traffic and crowd size.

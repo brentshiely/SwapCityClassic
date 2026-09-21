@@ -113,6 +113,7 @@ export class PlayerController {
       s.peds.alarm(t.x, t.y, 14);
     }
     this.stolen = true;
+    s.police?.wanted.add('jack');
     this.enterCar();
     this.say('Got a new car');
   }
@@ -154,11 +155,13 @@ export class PlayerController {
     const targets = s.pedsOn ? s.peds.peds.filter((p) => !p.dead && Math.abs(p.x - w.x) < PISTOL.range && Math.abs(p.y - w.y) < PISTOL.range) : [];
     const r = hitscan(mx, my, angle, (x, y) => s.collision.insideSolid(x, y), targets);
     this.tracers.push({ x0: mx, y0: my, x1: r.x, y1: r.y, t: 0.09 });
+    s.police?.wanted.add('shot');
     if (s.pedsOn) s.peds.alarm(w.x, w.y, 24);
     if (r.target) {
       const p = r.target;
       s.peds.kill(p);
       this.kills++;
+      s.police?.wanted.add('kill');
       this.corpses.push({ x: p.x, y: p.y, heading: p.heading, clothes: p.clothes, skin: p.skin, hair: p.id % 5, t: 0, img: null });
     }
   }

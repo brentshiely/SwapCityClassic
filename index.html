@@ -7,12 +7,14 @@
   <style>
     html, body { margin: 0; height: 100%; background: #111; overflow: hidden; }
     #game { width: 100%; height: 100%; }
+    #attrib { position: fixed; right: 10px; bottom: 6px; margin: 0; color: rgba(230, 234, 236, 0.78); font: 11px/1.3 Menlo, monospace; text-align: right; pointer-events: none; text-shadow: 0 1px 2px #000, 0 0 3px #000; }
     #hud { position: fixed; left: 10px; top: 8px; margin: 0; color: #cfd5d9; font: 12px/1.5 Menlo, monospace; white-space: pre; pointer-events: none; text-shadow: 0 1px 2px #000; }
   </style>
 </head>
 <body>
   <div id="game"></div>
   <pre id="hud"></pre>
+  <p id="attrib">Map data &copy; OpenStreetMap contributors (ODbL)</p>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

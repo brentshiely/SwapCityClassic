@@ -18,10 +18,11 @@ export class PedView {
       seen.add(p.id);
       let sp = this.sprites.get(p.id);
       if (!sp) {
+        const hair = p.id % 5;
         sp = {
           shadow: this.scene.add.image(0, 0, 'ped_shadow').setDisplaySize(0.85 * PED_SCALE, 0.5 * PED_SCALE).setDepth(3.9),
-          body: this.scene.add.image(0, 0, pedTextureKey(this.scene, p.clothes, p.skin, p.id % 5, 0)).setDisplaySize(PED_SPRITE_M * PED_SCALE, PED_SPRITE_M * PED_SCALE).setDepth(4.6),
-          frame: 0, hair: p.id % 5,
+          body: this.scene.add.image(0, 0, pedTextureKey(this.scene, p.clothes, p.skin, 0, hair)).setDisplaySize(PED_SPRITE_M * PED_SCALE, PED_SPRITE_M * PED_SCALE).setDepth(4.6),
+          frame: 0, hair,
         };
         this.sprites.set(p.id, sp);
       }

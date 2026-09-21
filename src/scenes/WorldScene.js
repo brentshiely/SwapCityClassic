@@ -131,6 +131,6 @@ export class WorldScene extends Phaser.Scene {
     const s = this.buildings.stats;
     this.hud.textContent =
       `${Math.round(this.game.loop.actualFps)} fps  |  ${left}  |  ${s.drawn} buildings in ${s.ms.toFixed(1)} ms\n` +
-      `${controls}\n${map.meta.attribution}`;
+      `${controls}`;
   }
 }

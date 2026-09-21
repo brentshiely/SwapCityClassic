@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "bake": "node tools/bake_map.mjs"
+    "bake": "node tools/bake_map.mjs",
+    "package": "node scripts/package.mjs",
+    "check-offline": "node tools/check_offline.mjs",
+    "test": "node tools/test_car.mjs && node tools/test_collision.mjs && node tools/test_traffic.mjs && node tools/test_peds.mjs"
   },
   "dependencies": {
     "phaser": "^3.90.0"

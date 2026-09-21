@@ -1,4 +1,5 @@
 import { asphaltTile, paverTile, grassTile } from './textures.js';
+import { computeBarriers } from '../world/barriers.js';
 
 // The ground (sidewalks, roads, curbs, markings, crosswalks) is painted ONCE at load into large
 // raster chunks with canvas 2D, then drawn as ordinary images. Nothing here runs per frame.
@@ -81,7 +82,7 @@ function endTrim(streets, p) {
 }
 
 // ---------- the painter ----------
-function paintChunk(ctx, map, pat, originX, originY) {
+function paintChunk(ctx, map, pat, originX, originY, edge) {
   // Metres in, pixels out; patterns stay anchored to world (0,0) so chunks join seamlessly.
   ctx.setTransform(PPM, 0, 0, PPM, -originX * PPM, -originY * PPM);
   ctx.lineJoin = 'round';
@@ -120,6 +121,53 @@ function paintChunk(ctx, map, pat, originX, originY) {
 
   paintMarkings(ctx, map);
   paintCrosswalks(ctx, map, pat);
+  paintEdge(ctx, map, edge);
+}
+
+// The edge of the playable world: dim everything outside, a fence along it, and striped
+// concrete barricades across every street that leaves the map.
+function paintEdge(ctx, map, { barriers }) {
+  const w = map.meta.world;
+  ctx.beginPath();
+  ctx.rect(w.minX - 500, w.minY - 500, w.maxX - w.minX + 1000, w.maxY - w.minY + 1000);
+  ctx.rect(w.minX, w.minY, w.maxX - w.minX, w.maxY - w.minY);
+  ctx.fillStyle = 'rgba(8,12,14,0.4)';
+  ctx.fill('evenodd');
+
+  // fence: a dark rail with posts every 3 m
+  ctx.lineCap = 'butt';
+  ctx.strokeStyle = '#2b3236'; ctx.lineWidth = 0.22;
+  ctx.strokeRect(w.minX, w.minY, w.maxX - w.minX, w.maxY - w.minY);
+  ctx.fillStyle = '#9aa3a8';
+  for (let x = w.minX; x <= w.maxX; x += 3) { ctx.fillRect(x - 0.18, w.minY - 0.18, 0.36, 0.36); ctx.fillRect(x - 0.18, w.maxY - 0.18, 0.36, 0.36); }
+  for (let y = w.minY; y <= w.maxY; y += 3) { ctx.fillRect(w.minX - 0.18, y - 0.18, 0.36, 0.36); ctx.fillRect(w.maxX - 0.18, y - 0.18, 0.36, 0.36); }
+  ctx.lineCap = 'round';
+
+  for (const b of barriers) {
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(b.angle); // local x = out of the map, local y = across the street
+    const T = b.thickness, BL = 2.4, n = Math.ceil(b.length / BL), y0 = -(n * BL) / 2;
+    for (let i = 0; i < n; i++) {
+      const y = y0 + i * BL + 0.06, h = BL - 0.12;
+      ctx.fillStyle = 'rgba(0,0,0,0.32)';
+      ctx.fillRect(-T / 2 + 0.3, y + 0.3, T, h);
+      ctx.save();
+      ctx.beginPath(); ctx.rect(-T / 2, y, T, h); ctx.clip();
+      ctx.fillStyle = '#dcded4'; ctx.fillRect(-T / 2, y, T, h);
+      ctx.fillStyle = '#e0552f';
+      for (let s = -2; s < 8; s++) {
+        const yy = y + s * 0.62;
+        ctx.beginPath();
+        ctx.moveTo(-T / 2, yy); ctx.lineTo(-T / 2, yy + 0.31); ctx.lineTo(T / 2, yy + 0.31 + T); ctx.lineTo(T / 2, yy + T);
+        ctx.closePath(); ctx.fill();
+      }
+      ctx.restore();
+      ctx.strokeStyle = 'rgba(30,34,30,0.7)'; ctx.lineWidth = 0.09;
+      ctx.strokeRect(-T / 2, y, T, h);
+    }
+    ctx.restore();
+  }
 }
 
 function paintMarkings(ctx, map) {
@@ -185,6 +233,7 @@ export function buildGround(scene, map) {
   const maxX = w.maxX + MARGIN, maxY = w.maxY + MARGIN;
   const cols = Math.ceil(((maxX - minX) * PPM) / CHUNK), rows = Math.ceil(((maxY - minY) * PPM) / CHUNK);
 
+  const edge = computeBarriers(map);
   const probe = document.createElement('canvas').getContext('2d');
   const pat = makePatterns(probe);
   const size = CHUNK / PPM, pad = 1 / PPM; // a hair of overlap hides seams between chunks
@@ -194,11 +243,11 @@ export function buildGround(scene, map) {
       const originX = minX + i * size, originY = minY + j * size;
       const c = document.createElement('canvas');
       c.width = c.height = CHUNK;
-      paintChunk(c.getContext('2d'), map, pat, originX, originY);
+      paintChunk(c.getContext('2d'), map, pat, originX, originY, edge);
       const key = `ground_${i}_${j}`;
       scene.textures.addCanvas(key, c);
       scene.add.image(originX - pad, originY - pad, key).setOrigin(0, 0).setDisplaySize(size + pad * 2, size + pad * 2).setDepth(0);
     }
   }
-  return { chunks: cols * rows, ms: Math.round(performance.now() - t0), pixels: cols * rows * CHUNK * CHUNK };
+  return { barriers: edge.barriers.length, chunks: cols * rows, ms: Math.round(performance.now() - t0), pixels: cols * rows * CHUNK * CHUNK };
 }

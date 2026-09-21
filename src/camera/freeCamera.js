@@ -6,6 +6,15 @@ import Phaser from 'phaser';
 export function attachFreeCamera(scene, { fitZoom, minZoom = fitZoom * 0.6, maxZoom = 40, home = [0, 0], onKey } = {}) {
   const cam = scene.cameras.main;
 
+  // When the window resizes, keep the same map spot in the middle of the screen.
+  let lastW = cam.width, lastH = cam.height;
+  scene.scale.on('resize', () => {
+    const cx = cam.scrollX + lastW / 2, cy = cam.scrollY + lastH / 2;
+    lastW = cam.width; lastH = cam.height;
+    cam.scrollX = cx - lastW / 2;
+    cam.scrollY = cy - lastH / 2;
+  });
+
   const zoomAt = (px, py, factor) => {
     const w = cam.width, h = cam.height, z1 = cam.zoom;
     const z2 = Phaser.Math.Clamp(z1 * factor, minZoom, maxZoom);

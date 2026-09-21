@@ -27,6 +27,7 @@ export class BuildingRenderer {
     this.g = scene.add.graphics().setDepth(10);
     this.scratch = [0, 1, 2, 3].map(() => ({ x: 0, y: 0 }));
     this.stats = { drawn: 0, ms: 0 };
+    this.world = map.meta.world;
     this.buildings = map.buildings.map((b) => this.prepare(b));
   }
 
@@ -45,8 +46,10 @@ export class BuildingRenderer {
       const facing = Math.cos(Math.atan2(ny, nx) - LIGHT); // 1 = faces the light
       edges.push({ a, b: c, len, nx, ny, shade: 0.72 + 0.22 * facing });
     }
+    const w = this.world, mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+    const outside = mx < w.minX || mx > w.maxX || my < w.minY || my > w.maxY;
     return {
-      h: b.height, eh: effectiveHeight(b.height), pts, edges, bbox: [x0, y0, x1, y1],
+      dim: outside ? 0.62 : 1, h: b.height, eh: effectiveHeight(b.height), pts, edges, bbox: [x0, y0, x1, y1],
       roofPts: pts.map(() => ({ x: 0, y: 0 })),
       pal, floors: Math.max(1, Math.round(b.height / 3.4)),
     };
@@ -81,7 +84,7 @@ export class BuildingRenderer {
     const { wall, roof } = b.pal;
 
     // floor: guarantees no gaps between footprint, walls and roof on odd shapes
-    g.fillStyle(rgb(wall, 0.7), 1);
+    g.fillStyle(rgb(wall, 0.7 * b.dim), 1);
     g.fillPoints(b.pts, true);
 
     const q = this.scratch;
@@ -92,7 +95,7 @@ export class BuildingRenderer {
       const ai = b.pts.indexOf(e.a), bi = (ai + 1) % b.pts.length;
       const ra = b.roofPts[ai], rb = b.roofPts[bi];
       q[0].x = e.a.x; q[0].y = e.a.y; q[1].x = e.b.x; q[1].y = e.b.y; q[2].x = rb.x; q[2].y = rb.y; q[3].x = ra.x; q[3].y = ra.y;
-      g.fillStyle(rgb(wall, e.shade), 1);
+      g.fillStyle(rgb(wall, e.shade * b.dim), 1);
       g.fillPoints(q, true);
 
       // window bands, only when the wall is wide enough on screen to show them
@@ -111,9 +114,9 @@ export class BuildingRenderer {
       }
     }
 
-    g.fillStyle(rgb(roof, 1), 1);
+    g.fillStyle(rgb(roof, b.dim), 1);
     g.fillPoints(b.roofPts, true);
-    g.lineStyle(0.35, rgb(roof, 0.55), 1);
+    g.lineStyle(0.35, rgb(roof, 0.55 * b.dim), 1);
     g.strokePoints(b.roofPts, true, true);
   }
 }

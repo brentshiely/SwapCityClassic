@@ -4,3 +4,5 @@ dist/
 debug/
 release/
 secrets/
+data/raw/city/
+data/city/

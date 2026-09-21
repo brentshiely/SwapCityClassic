@@ -39,7 +39,10 @@ async function loadCity() {
     const r = await fetch(`${CITY}/city.json`);
     if (!r.ok) throw new Error(`could not load ${CITY}/city.json (${r.status})`);
     city = await r.json();
-    source = fetchSource(CITY);
+    const rr = await fetch(`${CITY}/roofs.json`).catch(() => null); // roof photos per tile, if the city was baked with them
+    const roofs = rr && rr.ok ? await rr.json().catch(() => null) : null;
+    city.meta.roofPhotos = roofs;
+    source = fetchSource(CITY, roofs);
   }
   const world = new World(city, source);
   const start = findStart(world);

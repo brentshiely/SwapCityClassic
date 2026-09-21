@@ -49,7 +49,8 @@ export class BuildingRenderer {
   }
 
   /** add buildings (a tile arriving); one that is already here is skipped */
-  add(list) {
+  add(list, tile = null) {
+    this.tile = tile; // the tile they arrived with: its aerial photo is where their roofs are cut from
     for (const b of list) {
       if (this.byId.has(b.id)) continue;
       const blocks = b.parts ? b.parts.map((part) => this.prepare(b, part)) : [this.prepare(b)];
@@ -99,7 +100,7 @@ export class BuildingRenderer {
     for (const [x, y] of b.points) { gx0 = Math.min(gx0, x); gy0 = Math.min(gy0, y); gx1 = Math.max(gx1, x); gy1 = Math.max(gy1, y); }
     const w = this.world, mx = (gx0 + gx1) / 2, my = (gy0 + gy1) / 2;
     const outside = this.inside ? !this.inside(mx, my) : (mx < w.minX || mx > w.maxX || my < w.minY || my > w.maxY);
-    const roof = this.roofs ? this.roofs.cut(b.id + (part ? `p${Math.round(part.top * 10)}` : ''), pts, top) : null;
+    const roof = this.roofs ? this.roofs.cut(b.id + (part ? `p${Math.round(part.top * 10)}` : ''), pts, top, this.tile) : null;
     return {
       dim: outside ? 0.62 : 1, base, top, pts, edges, bbox: [x0, y0, x1, y1], group: [mx, my], roof, img: null,
       basePts: pts.map(() => ({ x: 0, y: 0 })), roofPts: pts.map(() => ({ x: 0, y: 0 })),

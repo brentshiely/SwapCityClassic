@@ -47,7 +47,7 @@ Ground is painted per 85 m chunk on demand (`GroundStreamer` in `render/ground.j
 the car cannot leave the city limit (a wall along `meta.boundary`, a striped barricade across every street that crosses it).
 The car waits if the tile under it has not arrived. Downtown-only dev data: `node tools/map_to_city.mjs` -> `data/city_dt/`
 (served at `/city/` when `data/city` is missing). The single offline file (`npm run package`) embeds the downtown data (`EMBED_CITY=1`).
-Not yet city-wide: LiDAR heights and NAIP roof photos (downtown only; elsewhere heights are guessed and roofs are flat), and Google mode
+City-wide roof photos: `npm run fetch-naip-city` + `npm run bake-roof-tiles` write `tiles/{tx}_{ty}.jpg` (672 px, 2 px/m, 40 m margin) and `roofs.json`; the tile brings its photo and `RoofCutter` cuts roofs from it (downtown keeps its sharper global photo; the lean outside downtown is held constant). Not yet city-wide: LiDAR heights (downtown only; elsewhere heights are guessed), and Google mode
 (only lined up within ~1.8 km of downtown, then the offline look). The flight build is tag `flight-2026-09-28` (+ `release/flight/`).
 
 ## Google Earth mode

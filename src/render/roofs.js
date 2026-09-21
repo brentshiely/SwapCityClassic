@@ -12,9 +12,13 @@ import lean from '../../data/roof_offsets.json';
 
 export const ROOF_PHOTO = { key: 'roof_photo', url: photoUrl };
 
-/** where a roof at the given height appears in the photo relative to its footprint, metres */
+/**
+ * where a roof at the given height appears in the photo relative to its footprint, metres. The lean was measured downtown; farther out the
+ * position terms are held at the edge of downtown (a constant lean, about a tenth of the height), which is close for the low buildings there.
+ */
 export function roofShift(x, y, height) {
-  return [height * (lean.x[0] * x + lean.x[1] * y + lean.x[2]), height * (lean.y[0] * x + lean.y[1] * y + lean.y[2])];
+  const cx = Math.max(-400, Math.min(400, x)), cy = Math.max(-400, Math.min(400, y));
+  return [height * (lean.x[0] * cx + lean.x[1] * cy + lean.x[2]), height * (lean.y[0] * cx + lean.y[1] * cy + lean.y[2])];
 }
 
 export class RoofCutter {
@@ -24,22 +28,29 @@ export class RoofCutter {
     const tex = scene.textures.exists(ROOF_PHOTO.key) ? scene.textures.get(ROOF_PHOTO.key) : null;
     this.photo = tex ? tex.getSourceImage() : null;
     this.count = 0;
+    this.tileMeta = null; // { ppm, margin, tileSize } of the per-tile roof photos, when the city has them
   }
 
   /**
    * Cut the roof of a block: `pts` is its footprint [{x, y}], `top` its roof height. Returns { key, x0, y0, w, h } (the footprint's
    * bounding box in game metres, which is where the image goes before perspective), or null without the photo.
    */
-  cut(id, pts, top) {
-    if (!this.photo) return null;
+  cut(id, pts, top, tile = null) {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const p of pts) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
     const w = x1 - x0, h = y1 - y0;
     if (w < 0.5 || h < 0.5) return null;
-    const ppm = photoMeta.ppm, cw = Math.max(2, Math.ceil(w * ppm)), ch = Math.max(2, Math.ceil(h * ppm));
+    const cw = Math.max(2, Math.ceil(w * 3)), ch = Math.max(2, Math.ceil(h * 3)); // cut-out size: 3 px per metre (a tile photo has fewer, and is stretched)
     const [sx, sy] = roofShift((x0 + x1) / 2, (y0 + y1) / 2, top);
-    // outside the photo (the rest of the city has none yet): a flat roof colour is drawn instead
-    if (x0 + sx < photoMeta.minX || y0 + sy < photoMeta.minY || x1 + sx > photoMeta.maxX || y1 + sy > photoMeta.maxY) return null;
+    // the photo to cut from: the sharp downtown one if the roof is inside it, else the photo of the tile it arrived with (with its margin)
+    let photo = null, ox = photoMeta.minX, oy = photoMeta.minY, ppm = photoMeta.ppm;
+    if (this.photo && x0 + sx >= photoMeta.minX && y0 + sy >= photoMeta.minY && x1 + sx <= photoMeta.maxX && y1 + sy <= photoMeta.maxY) photo = this.photo;
+    else if (tile?.photo && this.tileMeta) {
+      const { ppm: tp, margin: m, tileSize: T } = this.tileMeta;
+      ox = tile.tx * T - m; oy = tile.ty * T - m; ppm = tp;
+      if (x0 + sx >= ox && y0 + sy >= oy && x1 + sx <= ox + T + 2 * m && y1 + sy <= oy + T + 2 * m) photo = tile.photo;
+    }
+    if (!photo) return null; // no photo there: a flat roof colour is drawn instead
     const c = document.createElement('canvas');
     c.width = cw; c.height = ch;
     const g = c.getContext('2d');
@@ -48,7 +59,7 @@ export class RoofCutter {
     g.closePath();
     g.clip();
     // the photo region under the roof: the footprint's box moved by the lean, in photo pixels
-    g.drawImage(this.photo, (x0 + sx - photoMeta.minX) * ppm, (y0 + sy - photoMeta.minY) * ppm, w * ppm, h * ppm, 0, 0, cw, ch);
+    g.drawImage(photo, (x0 + sx - ox) * ppm, (y0 + sy - oy) * ppm, w * ppm, h * ppm, 0, 0, cw, ch);
     const key = `roof_${id}_${Math.round(top * 10)}`;
     if (this.scene.textures.exists(key)) this.scene.textures.remove(key);
     this.scene.textures.addCanvas(key, c);

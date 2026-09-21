@@ -43,6 +43,7 @@ export class WorldScene extends Phaser.Scene {
     this.world = this.registry.get('world');
     const map = this.world; // the parts of the game that only need roads and the graph take the World as their map
     this.roofCutter = new RoofCutter(this);
+    this.roofCutter.tileMeta = map.meta.roofPhotos ? { ...map.meta.roofPhotos, tileSize: map.meta.tileSize } : null;
     const inside = (x, y) => this.world.insideCity(x, y);
     this.buildings = new BuildingRenderer(this, { meta: map.meta, buildings: [], inside }, this.roofCutter);
     this.skyways = new BuildingRenderer(this, { meta: map.meta, buildings: [], inside }, null, 12); // a separate layer: it stays on top of Google's picture too
@@ -110,7 +111,7 @@ export class WorldScene extends Phaser.Scene {
     w.onLoad.push((tile) => {
       const fresh = [];
       for (const b of tile.buildings) { const n = refs.get(b.id) ?? 0; refs.set(b.id, n + 1); if (!n) fresh.push(b); }
-      this.buildings.add(fresh);
+      this.buildings.add(fresh, tile);
       this.peds?.tilesChanged(); // sidewalks that were waiting for building data can be built now
       for (const b of fresh) this.collision.addBuilding(b);
       const sk = tile.skyways.filter((k) => { const n = skyRefs.get(k.id) ?? 0; skyRefs.set(k.id, n + 1); return !n; });

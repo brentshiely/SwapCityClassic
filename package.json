@@ -10,6 +10,8 @@
     "bake": "node tools/bake_map.mjs",
     "fetch-city": "node tools/fetch_city_osm.mjs",
     "bake-city": "node --max-old-space-size=8192 tools/bake_city.mjs",
+    "fetch-naip-city": "python3 tools/fetch_naip_city.py",
+    "bake-roof-tiles": "python3 tools/bake_roof_tiles.py",
     "package": "node scripts/package.mjs",
     "check-offline": "node tools/check_offline.mjs",
     "test": "node tools/test_car.mjs && node tools/test_collision.mjs && node tools/test_traffic.mjs && node tools/test_peds.mjs && node tools/test_peds_city.mjs && node tools/test_navigation.mjs && node tools/test_perspective.mjs && node --expose-gc tools/test_city_scale.mjs"

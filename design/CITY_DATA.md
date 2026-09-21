@@ -50,3 +50,27 @@ Deviations and things the engine must know:
 - Building filter: any vertex inside the limit or within 1.5 m of it. Walkways and areas are kept if any vertex is in the limit + 60 m. Multipolygon buildings/parks (relations) are not fetched, as in the downtown bake.
 - `meta` has extra fields beyond the spec: `source`, `frame`, `roadMargin`. `meta.tiles` is the tile range of the city limit box (the non-empty tiles are a subset).
 - Skyways clipped against building footprints, as before (downtown only in practice). Crossings are stored in the tile their point is in.
+
+## Roof photos
+
+`data/city/tiles/{tx}_{ty}.jpg` is the aerial photo (USDA NAIP, public domain, via the USGS National Map ImageServer) of tile (tx, ty) in the
+game frame, written next to the tile JSON for every tile that has at least one building. `data/city/roofs.json` holds
+`{ ppm: 2, margin: 40, tileSize: 256, source }`. Tiles without buildings have no jpg (the loader must treat a missing jpg as "no roofs").
+
+Extent: game metres x in [tx*256 - 40, (tx+1)*256 + 40], y in [ty*256 - 40, (ty+1)*256 + 40], i.e. the tile plus a 40 m margin (a leaning
+roof can be cut from beside its footprint). Size (256 + 2*40) * 2 = 672 x 672 px, 2 px per game metre, JPEG q80 (4:2:0), Contrast 1.10 / Color 0.95
+as `data/roofs_naip.jpg`. Pixel (i, j), i to the right, j down, covers the square whose centre is
+`x = tx*256 - 40 + (i + 0.5)/2`, `y = ty*256 - 40 + (j + 0.5)/2` (game metres, x right, y down); pixel corner (0, 0) is exactly (tx*256 - 40, ty*256 - 40).
+The frame is rotated 30 degrees against north: the photo is resampled (bicubic) so downtown streets are straight; elsewhere streets are tilted.
+Like NAIP itself the photo is straightened to the ground, so a tall roof appears shifted away from its footprint (see "Roof photos" in the README).
+
+Build: `npm run fetch-naip-city` (tools/fetch_naip_city.py) downloads north-up mercator blocks (4000 x 4000 px, 0.5 m per ground pixel, all on one pixel grid, origin
+(-10400000, 5600000) EPSG:3857, mercator 0.70681 per px) to `data/raw/naip/` (gitignored) with `index.json` (bbox3857 per block, blank flags) and
+`fetch.log`; resumable. `npm run bake-roof-tiles` (tools/bake_roof_tiles.py) cuts the tile photos (same game -> lon/lat -> mercator maths as
+tools/bake_naip.py, shared in tools/lib/naip_common.py; blocks are joined on the common pixel grid, so tiles across block edges have no seams); resumable
+(`--force` to redo), writes `data/raw/naip/bake_report.json`.
+
+Real numbers (NAIP as served 2026-09-21): 61 blocks, 257 MB downloaded (245 MB on disk), none blank, in 20 min (one request at a time, 1.5 s pause).
+2,222 tiles photographed (of 2,581 non-empty tiles; the other 359 have no buildings), 206.7 MB in total, 50 to 108 KB per tile (median 96 KB), baked in 18 s
+with 7 processes. No tile lacks coverage. Downtown check against `data/roofs_naip.jpg`: position agrees to within 0.1 m (phase correlation), mean absolute
+pixel difference 2.6 to 3.7 of 255 (different resolution, 0.3 vs 0.5 m/px).

@@ -6,9 +6,21 @@ import { junctionInfo } from './geometry.js';
 // them, keeps the near ones and lets the far ones go, and tells the rest of the game through onLoad / onUnload.
 // See design/CITY_DATA.md for the data format.
 
-export const fetchSource = (base) => async (tx, ty) => {
+/**
+ * Tiles from a server folder. If the folder has roof photos (roofs.json, written by tools/bake_roof_tiles.py), each tile with buildings also
+ * brings its aerial photo (tiles/{tx}_{ty}.jpg) as `tile.photo` (an ImageBitmap) so the roofs can be cut from it.
+ */
+export const fetchSource = (base, roofs = null) => async (tx, ty) => {
   const r = await fetch(`${base}/tiles/${tx}_${ty}.json`);
-  return r.ok ? r.json() : null;
+  if (!r.ok) return null;
+  const data = await r.json();
+  if (roofs && data.buildings?.length && typeof createImageBitmap === 'function') {
+    try {
+      const p = await fetch(`${base}/tiles/${tx}_${ty}.jpg`);
+      if (p.ok) data.photo = await createImageBitmap(await p.blob());
+    } catch { /* no photo for this tile: flat roofs */ }
+  }
+  return data;
 };
 
 export class World {
@@ -116,6 +128,7 @@ export class World {
         this.tiles.delete(k);
         this.stats.unloaded++;
         if (tile.announced) for (const f of this.onUnload) f(tile);
+        tile.photo?.close?.(); // frees the image memory
       }
     }
     // announce a couple of loaded tiles per frame

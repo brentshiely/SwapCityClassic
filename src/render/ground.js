@@ -82,25 +82,12 @@ function endTrim(streets, p) {
   return best ? roadWidth(best) / 2 - 0.05 : 0;
 }
 
-// ---------- the painter ----------
-function paintChunk(ctx, map, pat, originX, originY, edge) {
-  // Metres in, pixels out; patterns stay anchored to world (0,0) so chunks join seamlessly.
-  ctx.setTransform(PPM, 0, 0, PPM, -originX * PPM, -originY * PPM);
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-  const view = { x0: originX, y0: originY, x1: originX + CHUNK / PPM, y1: originY + CHUNK / PPM };
-
-  // sidewalk everywhere
-  ctx.fillStyle = pat.paver;
-  ctx.fillRect(view.x0 - 1, view.y0 - 1, CHUNK / PPM + 2, CHUNK / PPM + 2);
-
-  // parks and parking lots
-  for (const a of map.areas) {
-    ctx.fillStyle = a.kind === 'parking' ? pat.lot : pat.grass;
-    pathOf(ctx, a.points); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 0.25; ctx.stroke();
-  }
-
+/**
+ * The road surface: curbs, asphalt, alleys, lane lines, crosswalks and stop lines. `ctx` can be a real canvas or the geometry
+ * recorder of the Google Earth road overlay (src/earth/roadOverlay.js), so both looks share one description of the streets.
+ * `pat.asphalt` / `pat.alley` are fill styles (canvas patterns, or plain names for the recorder).
+ */
+export function paintRoadLayer(ctx, map, pat) {
   // roads at street level or above, lowest layer first (tunnels are not painted on the surface)
   const roads = map.roads.filter((r) => r.layer >= 0).sort((a, b) => a.layer - b.layer);
   const streets = roads.filter((r) => !isService(r));
@@ -123,6 +110,28 @@ function paintChunk(ctx, map, pat, originX, originY, edge) {
   paintMarkings(ctx, map);
   paintCrosswalks(ctx, map, pat);
   paintStopLines(ctx, map);
+}
+
+// ---------- the painter ----------
+function paintChunk(ctx, map, pat, originX, originY, edge) {
+  // Metres in, pixels out; patterns stay anchored to world (0,0) so chunks join seamlessly.
+  ctx.setTransform(PPM, 0, 0, PPM, -originX * PPM, -originY * PPM);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  const view = { x0: originX, y0: originY, x1: originX + CHUNK / PPM, y1: originY + CHUNK / PPM };
+
+  // sidewalk everywhere
+  ctx.fillStyle = pat.paver;
+  ctx.fillRect(view.x0 - 1, view.y0 - 1, CHUNK / PPM + 2, CHUNK / PPM + 2);
+
+  // parks and parking lots
+  for (const a of map.areas) {
+    ctx.fillStyle = a.kind === 'parking' ? pat.lot : pat.grass;
+    pathOf(ctx, a.points); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 0.25; ctx.stroke();
+  }
+
+  paintRoadLayer(ctx, map, pat);
   paintEdge(ctx, map, edge);
 }
 

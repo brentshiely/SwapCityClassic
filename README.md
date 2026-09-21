@@ -46,6 +46,20 @@ that uses Google is one billed session, so Auto stops using Google after 40 laun
 policy) and the Google logo and attribution always show. `tools/earth_align.py` produced `data/earth_align.json`, the
 game-frame-to-Earth alignment (ground height, no Google data).
 
+**Our streets over Google** (`src/earth/roadOverlay.js`): the road surface (kerbs, asphalt, lane lines, crosswalks, stop
+lines) is drawn over Google's picture so the cars photographed on its streets are covered. It reuses `paintRoadLayer` from
+`src/render/ground.js` through a recording canvas that turns the strokes into triangles in the same three.js scene, so
+tower walls still hide it. It floats 3 m up (above a car roof) and is scaled toward the camera to land where the ground
+would. The T panel choice `Our streets over Google` switches it off; `?roadlift=` changes the height for experiments.
+It only draws over Google's imagery and reads nothing back from it.
+
+## Skyways
+
+OSM has the Minneapolis Skyway (bridge=covered ways). `tools/bake_map.mjs` keeps the stretches over open ground into
+`map.skyways` (anything inside a building footprint is dropped); `src/world/skyways.js` turns each into a block that a second
+`BuildingRenderer` draws from deck height to roof height, above the cars, so traffic passes underneath. It is a separate
+layer so it also shows over Google's picture, where it covers Google's own skyway. Skyways do not collide.
+
 ## Adding a setting to the T panel
 
 The panel is built from a list, so a new slider is one entry:

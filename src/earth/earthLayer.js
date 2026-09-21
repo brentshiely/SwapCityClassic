@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { TilesRenderer } from '3d-tiles-renderer/three';
+import { buildRoadOverlay } from './roadOverlay.js';
 import { GoogleCloudAuthPlugin, GLTFExtensionsPlugin } from '3d-tiles-renderer/plugins';
 
 // Google Earth mode: Google's Photorealistic 3D Tiles drawn LIVE under the game, from a camera straight above the car.
@@ -45,9 +46,10 @@ export class EarthLayer {
    * @param canvas the <canvas> this draws into (sits under the game's canvas)
    * @param apiKey Google Maps Platform key with the Map Tiles API enabled
    * @param align the contents of data/earth_align.json
+   * @param map the game's map (its streets are drawn over Google's picture)
    * @param onState (state, detail) => void   state: 'loading' | 'ready' | 'failed'
    */
-  constructor({ canvas, apiKey, align, onState }) {
+  constructor({ canvas, apiKey, align, map, onState }) {
     this.onState = onState;
     this.state = 'loading';
     this.canvas = canvas;
@@ -68,6 +70,11 @@ export class EarthLayer {
     tiles.group.matrixWorldNeedsUpdate = true;
     tiles.setCamera(this.camera);
     this.scene.add(tiles.group);
+    // our streets over Google's (covers the photographed cars; see roadOverlay.js)
+    this.overlay = buildRoadOverlay(map);
+    const lift = Number(new URLSearchParams(location.search).get('roadlift'));
+    if (lift > 0) this.overlay.setLift(lift);
+    this.scene.add(this.overlay.group);
 
     this.errors = 0;
     tiles.addEventListener('load-error', (e) => {
@@ -75,7 +82,7 @@ export class EarthLayer {
       // if the very first requests fail (no internet, bad key, over quota) give up and let the game use its offline look
       if (this.state === 'loading') this.fail(e?.error?.message ?? e?.message ?? 'tiles could not be loaded');
     });
-    this.timeout = setTimeout(() => { if (this.state === 'loading') this.fail('no tiles arrived in 25 s'); }, 25000);
+    this.timeout = setTimeout(() => { if (this.state === 'loading') this.fail('no tiles arrived in 45 s'); }, 45000);
     this.onOffline = () => this.fail('the internet went away');
     addEventListener('offline', this.onOffline);
   }
@@ -86,6 +93,8 @@ export class EarthLayer {
     console.warn('Google Earth mode unavailable, using the offline look:', reason);
     this.onState?.('failed', reason);
   }
+
+  setStreetsOver(on) { this.overlay.group.visible = on; }
 
   resize(w, h) {
     if (this.w === w && this.h === h) return;
@@ -108,6 +117,7 @@ export class EarthLayer {
     cam.lookAt(camX, 0, camY);
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
+    this.overlay.update(camX, camY, H);
     this.tiles.setResolutionFromRenderer(cam, this.renderer);
     this.tiles.update();
     this.renderer.render(this.scene, cam);

@@ -27,11 +27,13 @@ export class LookController {
    * @param images the ground images (hidden while Google shows)
    * @param buildingLayer the buildings' Graphics object (hidden while Google shows)
    * @param getLook () => 'auto' | 'google' | 'offline' (the saved setting)
+   * @param getStreets () => 'on' | 'off': our streets over Google's picture
+   * @param map the game map
    * @param urlLook 'auto' | 'google' | 'offline' | null (the address bar wins)
    * @param setLook (value) => void, used by the G key
    */
-  constructor({ scene, images, buildingLayer, getLook, urlLook, setLook }) {
-    Object.assign(this, { scene, images, buildingLayer, getLook, urlLook, setLook });
+  constructor({ scene, images, buildingLayer, getLook, getStreets, map, urlLook, setLook }) {
+    Object.assign(this, { scene, images, buildingLayer, getLook, getStreets, map, urlLook, setLook });
     this.canvas = document.getElementById('earth');
     this.attrib = document.getElementById('earth-attrib');
     this.lastSetting = getLook(); // when the setting changes (T panel or the G key), that beats the address bar
@@ -76,7 +78,7 @@ export class LookController {
     this.loading = true;
     countSession();
     import('./earthLayer.js').then(({ EarthLayer }) => {
-      this.earth = new EarthLayer({ canvas: this.canvas, apiKey: KEY, align, onState: (state, detail) => { if (state === 'failed') this.fail(detail); } });
+      this.earth = new EarthLayer({ canvas: this.canvas, apiKey: KEY, align, map: this.map, onState: (state, detail) => { if (state === 'failed') this.fail(detail); } });
     }).catch((err) => this.fail(err?.message ?? 'could not start'));
   }
 
@@ -93,6 +95,7 @@ export class LookController {
   update(camX, camY, H, zoom, w, h) {
     const want = this.wanted();
     if (want) this.start();
+    if (want && this.earth) this.earth.setStreetsOver(this.getStreets() !== 'off');
     if (want && this.earth) this.earth.update(camX, camY, H, zoom, w, h);
     const show = !!(want && this.earth && this.earth.state === 'ready');
     if (show !== this.shown) this.setShown(show);

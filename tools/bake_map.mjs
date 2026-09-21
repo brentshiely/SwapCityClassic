@@ -240,6 +240,52 @@ for (const w of ways) {
   buildings.push(b);
 }
 
+// ---------- skyways ----------
+// Elevated enclosed walkways between buildings ("Minneapolis Skyway", tagged bridge=covered/yes). Only the stretch that spans
+// open ground (street, sidewalk) is kept: anything inside a building footprint is part of the building. The game draws each as a
+// block above the street, so cars drive under it.
+const insidePoly = (x, y, poly) => {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+};
+const inAnyBuilding = (x, y) => buildings.some((b) => insidePoly(x, y, b.points));
+const skyways = [];
+for (const w of ways) {
+  const t = w.tags ?? {};
+  if (!/skyway/i.test(t.name ?? '') || !(t.bridge === 'covered' || t.bridge === 'yes') || t.tunnel === 'yes') continue;
+  if (t.highway === 'steps' || Number(t.layer) < 1) continue;
+  const pts = w.geometry.map(toGame);
+  if (!bboxHits(pts, WORLD)) continue;
+  // walk the way in 0.25 m steps and keep the runs that are outside every building
+  let run = null;
+  const runs = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [ax, ay] = pts[i], [bx, by] = pts[i + 1], len = Math.hypot(bx - ax, by - ay), n = Math.max(1, Math.ceil(len / 0.25));
+    for (let k = (i === 0 ? 0 : 1); k <= n; k++) {
+      const x = ax + ((bx - ax) * k) / n, y = ay + ((by - ay) * k) / n;
+      if (inAnyBuilding(x, y)) { if (run) { runs.push(run); run = null; } }
+      else { (run ??= []).push([x, y]); }
+    }
+  }
+  if (run) runs.push(run);
+  for (const r of runs) {
+    // simplify: keep the ends and any real bend
+    const keep = [r[0]];
+    for (let i = 1; i < r.length - 1; i++) {
+      const a = keep[keep.length - 1], b = r[i], c = r[i + 1];
+      const cross = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / (Math.hypot(c[0] - a[0], c[1] - a[1]) || 1);
+      if (cross > 0.3) keep.push(b);
+    }
+    keep.push(r[r.length - 1]);
+    const length = keep.reduce((acc, p, i) => acc + (i ? Math.hypot(p[0] - keep[i - 1][0], p[1] - keep[i - 1][1]) : 0), 0);
+    if (length >= 3) skyways.push({ id: w.id, points: keep.map(rpt) });
+  }
+}
+
 // ---------- ground areas ----------
 const areas = [];
 for (const w of ways) {
@@ -267,7 +313,7 @@ const map = {
     box: { minX: r1(B.xMin - cx), minY: r1(-(B.yMax - cy)), maxX: r1(B.xMax - cx), maxY: r1(-(B.yMin - cy)) },
     world: { minX: r1(WORLD.minX), minY: r1(WORLD.minY), maxX: r1(WORLD.maxX), maxY: r1(WORLD.maxY) },
   },
-  roads, walkways, crossings, buildings, areas,
+  roads, walkways, crossings, buildings, areas, skyways,
   graph: { nodes: graphNodes.map(({ id, x, y, signal, stop, boundary, degree }) => ({ id, x, y, signal, stop, boundary, degree })), edges },
 };
 await writeFile('data/map.json', JSON.stringify(map));
@@ -285,6 +331,7 @@ const kb = Math.round(JSON.stringify(map).length / 1024);
 console.log(`Wrote data/map.json (${kb} KB)`);
 console.log(`  world ${(WORLD.maxX - WORLD.minX).toFixed(0)} x ${(WORLD.maxY - WORLD.minY).toFixed(0)} m`);
 console.log(`  roads ${roads.length}, walkways ${walkways.length}, crossings ${crossings.length}, areas ${areas.length}`);
+console.log(`  skyways over open ground: ${skyways.length} spans (${skyways.map((k) => k.points.length).join(',')} points)`);
 console.log(`  stepped buildings drawn as blocks: ${stepped}`);
 console.log(`  buildings ${buildings.length} (height from LiDAR ${fromLidar}, OSM height ${fromHeight}, levels ${fromLevels}, guessed ${fromDefault})`);
 console.log(`  graph nodes ${graphNodes.length} (signals ${graphNodes.filter((n) => n.signal).length}, stops ${graphNodes.filter((n) => n.stop).length}, boundary ${graphNodes.filter((n) => n.boundary).length}), edges ${edges.length}`);

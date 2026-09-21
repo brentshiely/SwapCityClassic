@@ -29,7 +29,7 @@ export class BuildingRenderer {
     // A stepped building (a low base with towers on it, measured from LiDAR) arrives as blocks, each with the height it
     // starts at and the height it reaches. A plain building is one block from the ground.
     this.buildings = [];
-    for (const b of map.buildings) {
+    for (const b of (map.buildings)) {
       if (b.parts) for (const part of b.parts) this.buildings.push(this.prepare(b, part));
       else this.buildings.push(this.prepare(b));
     }
@@ -39,7 +39,7 @@ export class BuildingRenderer {
     const poly = part ? part.points : b.points;
     const base = part ? part.base : 0, top = part ? part.top : b.height;
     const rand = mulberry32(b.id + (part ? Math.round(part.top) : 0));
-    const pal = top > 60 ? GLASS_TOWER : PALETTE[Math.floor(rand() * PALETTE.length)];
+    const pal = b.pal ?? (top > 60 ? GLASS_TOWER : PALETTE[Math.floor(rand() * PALETTE.length)]);
     const pts = poly.map(([x, y]) => ({ x, y }));
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const p of pts) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }

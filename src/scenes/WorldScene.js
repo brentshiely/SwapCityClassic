@@ -6,6 +6,7 @@ import { cameraHeight } from '../render/perspective.js';
 import { loadSettings, saveSettings } from '../settings.js';
 import { TuningPanel } from '../ui/tuningPanel.js';
 import { NavHud } from '../ui/navHud.js';
+import { skywayBuildings } from '../world/skyways.js';
 import { LookController } from '../earth/lookController.js';
 import { attachFreeCamera, startFromHash } from '../camera/freeCamera.js';
 import { Car, CAR, PHYSICS_STEP } from '../vehicles/carPhysics.js';
@@ -34,6 +35,7 @@ export class WorldScene extends Phaser.Scene {
     this.simTime = 0;
     this.cameras.main.setBackgroundColor(0x14181a);
     this.buildings = new BuildingRenderer(this, map);
+    this.skyways = new BuildingRenderer(this, { meta: map.meta, buildings: skywayBuildings(map) }); // a separate layer: it stays on top of Google's picture too
     this.info = buildGround(this, map);
     console.log(`ground painted: ${this.info.barriers} barriers, ${this.info.chunks} chunks, ${(this.info.pixels / 1e6).toFixed(0)} Mpx, ${this.info.ms} ms`);
     this.hud = document.getElementById('hud');
@@ -73,7 +75,7 @@ export class WorldScene extends Phaser.Scene {
     if (this.pedsOn) this.peds.fill(null, this.car);
     this.blockedFn = blocked;
     // which scenery is showing: Google Earth (live, when online) or the offline look
-    this.look = new LookController({ scene: this, images: this.info.images, buildingLayer: this.buildings.g, getLook: () => this.settings.look, urlLook: params.get('look'), setLook: (v) => this.tuning.set({ look: v }) });
+    this.look = new LookController({ scene: this, images: this.info.images, buildingLayer: this.buildings.g, getLook: () => this.settings.look, getStreets: () => this.settings.streets, map, urlLook: params.get('look'), setLook: (v) => this.tuning.set({ look: v }) });
     this.carView = new CarView(this, map.meta.world);
     this.trafficView = new TrafficView(this, this.traffic);
     this.pedView = new PedView(this, this.peds);
@@ -105,7 +107,9 @@ export class WorldScene extends Phaser.Scene {
     const cam = this.cameras.main;
     if (this.free) {
       const cx = cam.scrollX + cam.width / 2, cy = cam.scrollY + cam.height / 2;
-      this.buildings.update(cx, cy, cam.zoom, cam.width, cam.height, cameraHeight(this.camHeightSetting, 20, cam.zoom));
+      const Hf = cameraHeight(this.camHeightSetting, 20, cam.zoom);
+      this.buildings.update(cx, cy, cam.zoom, cam.width, cam.height, Hf);
+      this.skyways.update(cx, cy, cam.zoom, cam.width, cam.height, Hf);
       this.hudText(`${cam.zoom.toFixed(1)} px/m  |  view @ ${cx.toFixed(0)},${cy.toFixed(0)}`, 'two-finger scroll = pan   pinch or + / - = zoom   0 = refit   drag or arrows = pan');
       return;
     }
@@ -136,6 +140,7 @@ export class WorldScene extends Phaser.Scene {
     this.applyCamera();
     const H = cameraHeight(this.settings.camHeight, this.settings.zoomNear, this.camZoom);
     this.buildings.update(this.camX, this.camY, this.camZoom, cam.width, cam.height, H);
+    this.skyways.update(this.camX, this.camY, this.camZoom, cam.width, cam.height, H);
     this.look.update(this.camX, this.camY, H, this.camZoom, cam.width, cam.height);
 
     // traffic: cars spawn only outside what the player can see

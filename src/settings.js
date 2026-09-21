@@ -5,7 +5,7 @@ export const DEFAULTS = {
   look: 'auto', streets: 'on', overhead: 'on',
   zoomNear: 20, zoomFar: 12, lookahead: 0.45,
   vMax: 67, accel: 7.5, grip: 9, handbrakeGrip: 1.3, turnMax: 2.6,
-  camHeight: 300, cars: 16, peds: 80,
+  camHeight: 300, cars: 16, peds: 80, sfx: 0.8, music: 0.35,
 };
 
 export const SPEC = [
@@ -25,6 +25,10 @@ export const SPEC = [
     { key: 'grip', label: 'Tyre grip', unit: '', min: 3, max: 20, step: 0.5, hint: 'lower = more slide' },
     { key: 'handbrakeGrip', label: 'Handbrake grip', unit: '', min: 0.3, max: 6, step: 0.1, hint: 'lower = bigger powerslide' },
     { key: 'turnMax', label: 'Steering rate', unit: 'rad/s', min: 1.2, max: 4.5, step: 0.1, hint: 'how sharply it turns' },
+  ] },
+  { group: 'Sound', items: [
+    { key: 'sfx', label: 'Sound effects', unit: '', min: 0, max: 1, step: 0.05, hint: 'engine, tyres, crashes, guns, sirens (X mutes everything)' },
+    { key: 'music', label: 'Music', unit: '', min: 0, max: 1, step: 0.05, hint: 'N turns the music on and off' },
   ] },
   { group: 'World', items: [
     { key: 'camHeight', label: 'Camera height', unit: 'm', min: 60, max: 700, step: 10, hint: 'lower = buildings loom more; taller ones pass the lens' },

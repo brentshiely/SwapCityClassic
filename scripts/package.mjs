@@ -17,6 +17,7 @@ writeFileSync('release/HOW TO PLAY.txt', `SwapCityClassic - how to play (works w
    to take a job (a pink ring and arrow show where to go); M again abandons it. Cash and finished jobs are remembered.
    Crimes (shooting, killing, taking a car) earn stars; police cars chase you; if they catch you standing still you are BUSTED (a fine,
    your car is gone, back to the start). Lose them for a while and the stars fade.
+   Sound is made in the game: X mutes it, N turns the music on and off, H is the horn; volumes are in the T panel.
    The top of the screen shows the street you are on, your heading and the next street; the compass rose
    shows where true north is (the map is turned 30 degrees, so north is NOT straight up).
    T opens the SETTINGS panel: sliders for camera zoom, top speed, grip, traffic and crowd size.

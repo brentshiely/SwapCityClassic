@@ -156,12 +156,14 @@ export class PlayerController {
     const r = hitscan(mx, my, angle, (x, y) => s.collision.insideSolid(x, y), targets);
     this.tracers.push({ x0: mx, y0: my, x1: r.x, y1: r.y, t: 0.09 });
     s.police?.wanted.add('shot');
+    s.sound?.shot();
     if (s.pedsOn) s.peds.alarm(w.x, w.y, 24);
     if (r.target) {
       const p = r.target;
       s.peds.kill(p);
       this.kills++;
       s.police?.wanted.add('kill');
+      s.sound?.scream();
       this.corpses.push({ x: p.x, y: p.y, heading: p.heading, clothes: p.clothes, skin: p.skin, hair: p.id % 5, t: 0, img: null });
     }
   }

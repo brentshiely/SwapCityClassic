@@ -62,6 +62,14 @@ The pistol (`weapon.js`, Space or click, aim with the mouse) is a hitscan shot: 
 graph. Yellow rings are the phones (M to take the job), pink is the target. Cash and finished jobs are kept in localStorage.
 Tests: `tools/test_onfoot.mjs`, `tools/test_missions.mjs`.
 
+## Sound
+
+All sound is made in code with Web Audio (`src/audio/`): `params.js` turns the state of the game into numbers (pure, tested by
+`tools/test_audio.mjs`), `sound.js` plays them: an engine (two oscillators through a low-pass, pitch and loudness follow speed and throttle, gear
+"steps", road noise), tyre squeal on slides and the handbrake, crashes (from the speed lost in one moment), gunshots, footsteps, the police
+siren (a swept triangle wave, heard up to 160 m), a horn (H) and a small generative music loop (A minor, 88 bpm; N turns it on and off).
+X mutes everything; the T panel has Sound effects and Music volumes. The browser only allows sound after the first key press or click.
+
 ## Police and the wanted level
 
 Crimes add heat (`src/police/wanted.js`: a shot 4, a killing 30, taking a car 22); heat shows as 0-5 stars (20, 60, 120, 200, 300) and cools

@@ -24,6 +24,7 @@ import { findStart } from '../world/start.js';
 import { PlayerController } from '../player/playerController.js';
 import { MissionManager } from '../missions/missions.js';
 import { PoliceManager } from '../police/police.js';
+import { Sound } from '../audio/sound.js';
 
 const STEP = PHYSICS_STEP; // fixed physics step
 
@@ -104,6 +105,8 @@ export class WorldScene extends Phaser.Scene {
     this.pedView = new PedView(this, this.peds);
     this.input2 = new DriveInput(this);
     this.player = new PlayerController(this);
+    this.sound = new Sound(); // made in code; starts on the first key or click
+    this.keyX = this.input.keyboard.addKey('X'); this.keyN = this.input.keyboard.addKey('N'); this.keyH = this.input.keyboard.addKey('H');
     this.police = new PoliceManager(this.traffic); // crimes raise the wanted level; police cars chase (traffic cars with `police` set)
     this.keyM = this.input.keyboard.addKey('M');
     // missions: cash and finished missions are kept in this browser
@@ -154,6 +157,7 @@ export class WorldScene extends Phaser.Scene {
   applySettings() {
     const st = this.settings;
     Object.assign(CAR, { vMax: st.vMax, accel: st.accel, grip: st.grip, handbrakeGrip: st.handbrakeGrip, turnMax: st.turnMax });
+    this.sound?.setVolumes(st.sfx, st.music);
     this.traffic.count = this.urlCars ?? st.cars;
     this.peds.count = this.urlPeds ?? st.peds;
   }
@@ -196,11 +200,15 @@ export class WorldScene extends Phaser.Scene {
     const tileReady = this.world.isLoaded(me.x, me.y);
 
     // fixed-step physics so handling is identical at any frame rate
+    let crashLost = 0;
     if (this.player.inCar && tileReady && (!this.stopAt || this.simTime < this.stopAt)) {
       this.acc += dt;
       while (this.acc >= STEP) {
-        car.step(this.input2.read(STEP), STEP);
+        const before = car.speed;
+        this.lastInput = this.input2.read(STEP);
+        car.step(this.lastInput, STEP);
         this.collision.resolve(car, STEP);
+        crashLost = Math.max(crashLost, before - car.speed);
         if (this.trafficOn) pushPlayerOutOfTraffic(car, this.traffic.cars);
         this.acc -= STEP;
         this.simTime += STEP;
@@ -239,6 +247,14 @@ export class WorldScene extends Phaser.Scene {
       if (ev === 'busted') this.busted();
     }
     this.updateMissions(dt, me);
+    // sound
+    const snd = this.sound;
+    if (Phaser.Input.Keyboard.JustDown(this.keyX)) snd.toggleMute();
+    if (Phaser.Input.Keyboard.JustDown(this.keyN)) { this.settings.music = this.settings.music > 0 ? 0 : 0.35; this.applySettings(); }
+    if (Phaser.Input.Keyboard.JustDown(this.keyH) && this.player.inCar) snd.horn();
+    if (crashLost > 0) snd.crashHit(crashLost);
+    const inp = this.lastInput ?? {};
+    snd.update({ inCar: this.player.inCar, speed: car.speed, vMax: CAR.vMax, throttle: inp.throttle ?? 0, sideSpeed: car.sideSpeed ?? 0, handbrake: !!inp.handbrake, walkSpeed: this.player.inCar ? 0 : this.player.walker.speed, policeDistance: this.police.nearest, dt });
     this.hudText(`${this.player.inCar ? `${Math.round(car.speed * 2.23694)} mph (${Math.round(car.speed * 3.6)} km/h)` : `on foot, ${this.player.gun.reloading > 0 ? 'reloading' : `${this.player.gun.ammo} rounds`}`}  |  ${this.traffic.cars.length} cars, ${this.peds.peds.length} people  |  ${this.look.label}`, this.player.inCar ? '↑/W gas   ↓/S brake + reverse   ←→/AD steer   Space handbrake   E get out   R restart   T settings   G scenery' : 'WASD/arrows walk   Shift run   Space or click shoot   E get in / take a car   M mission   R restart car');
   }
 

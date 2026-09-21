@@ -3,12 +3,13 @@ import map from '../../data/map.json';
 import { buildGround } from '../render/ground.js';
 import { BuildingRenderer } from '../render/buildings.js';
 import { attachFreeCamera, startFromHash } from '../camera/freeCamera.js';
-import { Car, CAR } from '../vehicles/carPhysics.js';
+import { Car, CAR, PHYSICS_STEP } from '../vehicles/carPhysics.js';
+import { CollisionWorld } from '../world/collision.js';
 import { CarView } from '../vehicles/carView.js';
 import { DriveInput } from '../input/driveInput.js';
 import { findStart } from '../world/start.js';
 
-const STEP = 1 / 120; // fixed physics step
+const STEP = PHYSICS_STEP; // fixed physics step
 const ZOOM_NEAR = 20; // px per metre when slow
 const ZOOM_FAR = 12; // px per metre at top speed
 const LOOKAHEAD = 0.45; // seconds of travel the camera looks ahead
@@ -43,6 +44,7 @@ export class WorldScene extends Phaser.Scene {
 
     this.start = findStart(map);
     this.car = new Car(this.start.x, this.start.y, this.start.heading);
+    this.collision = new CollisionWorld(map);
     this.carView = new CarView(this, map.meta.world);
     this.input2 = new DriveInput(this);
     this.acc = 0;
@@ -77,6 +79,7 @@ export class WorldScene extends Phaser.Scene {
       this.acc += dt;
       while (this.acc >= STEP) {
         car.step(this.input2.read(STEP), STEP);
+        this.collision.resolve(car, STEP);
         this.acc -= STEP;
         this.simTime += STEP;
       }

@@ -1,6 +1,10 @@
 // Arcade car handling, GTA1 style. Pure maths, no Phaser: metres, seconds, radians.
 // World frame: x right, y down, heading 0 = facing +x, positive heading turns clockwise on screen.
 
+// Fixed physics step, shared by the game and the tests. Small enough that a car corner never moves
+// farther in one step than the width of the corner collision points (see world/collision.js).
+export const PHYSICS_STEP = 1 / 240;
+
 export const CAR = {
   length: 4.5,
   width: 1.9,
@@ -80,12 +84,12 @@ export class Car {
       vf -= Math.sign(vf) * Math.min(Math.abs(vf), C.handbrakeDecel * dt);
       this.braking = true;
     }
-    // sideways grip: the slide fades out exponentially, and most of what is removed is not lost but
-    // carried into the direction the car now points (so a drift ends in a car still moving, like GTA)
-    const removed = vl * (1 - Math.exp(-(input.handbrake ? C.handbrakeGrip : C.grip) * dt));
-    vl -= removed;
-    vf += Math.abs(removed) * C.gripKeep * (vf >= 0 ? 1 : -1);
-
+    // sideways grip: the slide fades out exponentially. Most of the kinetic energy that leaves the sideways
+    // motion is carried into the direction the car now points (so a drift ends in a car still moving, like
+    // GTA), the rest is lost. Energy is never gained, so sliding cannot add speed.
+    const vl2 = vl * (1 - (1 - Math.exp(-(input.handbrake ? C.handbrakeGrip : C.grip) * dt)));
+    vf = Math.sign(vf || 1) * Math.sqrt(vf * vf + C.gripKeep * (vl * vl - vl2 * vl2));
+    vl = vl2;
     vf = Math.min(vf, C.vMax * 1.02);
     this.vx = vf * f - vl * s;
     this.vy = vf * s + vl * f;

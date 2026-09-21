@@ -1,7 +1,7 @@
 // Sanity checks for the handling model. Run: node tools/test_car.mjs
-import { Car, CAR } from '../src/vehicles/carPhysics.js';
+import { Car, CAR, PHYSICS_STEP } from '../src/vehicles/carPhysics.js';
 
-const DT = 1 / 120;
+const DT = PHYSICS_STEP;
 const run = (car, seconds, input) => { for (let t = 0; t < seconds; t += DT) car.step(typeof input === 'function' ? input(t) : input, DT); };
 let failed = 0;
 const check = (name, ok, detail) => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}  ${detail}`); if (!ok) failed++; };

@@ -6,7 +6,9 @@ export class DriveInput {
   constructor(scene) {
     const kb = scene.input.keyboard;
     this.keys = kb.addKeys({ up: 'UP', down: 'DOWN', left: 'LEFT', right: 'RIGHT', w: 'W', s: 'S', a: 'A', d: 'D', space: 'SPACE', r: 'R' });
-    this.autopilot = new URLSearchParams(location.search).has('autopilot');
+    const q = new URLSearchParams(location.search);
+    this.autopilot = q.has('autopilot');
+    this.route = q.get('autopilot'); // '' = handbrake turn, 'crash' = drive into the buildings on the left
     this.t = 0;
   }
 
@@ -14,7 +16,7 @@ export class DriveInput {
   resetPressed() { return Phaser.Input.Keyboard.JustDown(this.keys.r); }
 
   read(dt) {
-    if (this.autopilot) return this.script((this.t += dt));
+    if (this.autopilot) return (this.route === 'crash' ? this.crash : this.script).call(this, (this.t += dt));
     const k = this.keys;
     const steer = (k.right.isDown || k.d.isDown ? 1 : 0) - (k.left.isDown || k.a.isDown ? 1 : 0);
     return { throttle: k.up.isDown || k.w.isDown ? 1 : 0, brake: k.down.isDown || k.s.isDown ? 1 : 0, steer, handbrake: k.space.isDown };
@@ -29,5 +31,10 @@ export class DriveInput {
       steer: between(3.5, 4.3) ? 1 : 0,
       handbrake: between(3.5, 4.2),
     };
+  }
+
+  // accelerate, then swing left at the buildings without lifting
+  crash(t) {
+    return { throttle: t >= 0.5 ? 1 : 0, brake: 0, steer: t >= 1.6 && t < 2.4 ? -1 : 0, handbrake: false };
   }
 }

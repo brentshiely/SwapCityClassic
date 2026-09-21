@@ -98,5 +98,24 @@ const blocked = (x, y) => world.insideSolid(x, y);
   check('the car barely slows (stays above 8 m/s)', minCarSpeed > 8, `${minCarSpeed.toFixed(1)} m/s`);
 }
 
+// ---- 4. the whole-city mode (radius) on the real map: same rules, network built lazily round the player
+{
+  const traffic = new TrafficSim(map, { seed: 5 });
+  const peds = new PedSim(map, traffic.signals, { seed: 5, blocked, count: 40, radius: 350, isLoaded: () => true });
+  traffic.peds = peds.peds; peds.cars = traffic.cars;
+  const player = { x: 0, y: 0, vx: 0, vy: 0, heading: 0 }, view = { cx: 0, cy: 0, hw: 60, hh: 38 }, DT = 1 / 60;
+  traffic.fill(null, player); peds.prime(player, view);
+  let inBuilding = 0, short = 0;
+  for (let t = 0; t < 5 * 60; t += DT) {
+    traffic.update(DT, player, view); peds.update(DT, player, view, blocked);
+    if (t > 20 && peds.peds.length < 40) short++;
+    for (const p of peds.peds) if (blocked(p.x, p.y)) inBuilding++;
+  }
+  console.log(`\n--- city mode on the small map: 5 simulated minutes ---`);
+  check('city mode builds the same network as the one-shot build once it has all been asked for', peds.net.nodes.length === new PedSim(map, traffic.signals, { blocked }).net.nodes.length, `${peds.net.nodes.length} nodes`);
+  check('city mode: the crowd stays at 40 (a person who just left is replaced within a few frames) and nobody is inside a building', short < 60 && inBuilding === 0, `${short} short frames, ${inBuilding} steps in a building`);
+  check('city mode: every crossing starts only while the cross street has green', peds.stats.badCrossStarts === 0 && peds.stats.crossings > 20, `${peds.stats.crossings} crossings`);
+}
+
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nall checks passed');
 process.exit(failed ? 1 : 0);

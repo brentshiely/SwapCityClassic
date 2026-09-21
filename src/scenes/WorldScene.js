@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
-import map from '../../data/map.json';
-import { buildGround } from '../render/ground.js';
+import { GroundStreamer } from '../render/ground.js';
+import { computeBarriers } from '../world/barriers.js';
 import { BuildingRenderer } from '../render/buildings.js';
 import { RoofCutter, ROOF_PHOTO } from '../render/roofs.js';
 import { cameraHeight } from '../render/perspective.js';
@@ -39,16 +39,21 @@ export class WorldScene extends Phaser.Scene {
     this.stopAt = Number(params.get('stop')) || 0; // freeze the sim at this many seconds (for test screenshots)
     this.simTime = 0;
     this.cameras.main.setBackgroundColor(0x14181a);
+    // the city: the road graph is whole, everything else arrives in tiles around the player (see world/world.js)
+    this.world = this.registry.get('world');
+    const map = this.world; // the parts of the game that only need roads and the graph take the World as their map
     this.roofCutter = new RoofCutter(this);
-    this.buildings = new BuildingRenderer(this, map, this.roofCutter);
-    this.skyways = new BuildingRenderer(this, { meta: map.meta, buildings: skywayBuildings(map) }, null, 12); // a separate layer: it stays on top of Google's picture too
-    this.info = buildGround(this, map);
-    console.log(`ground painted: ${this.info.barriers} barriers, ${this.info.chunks} chunks, ${(this.info.pixels / 1e6).toFixed(0)} Mpx, ${this.info.ms} ms`);
+    const inside = (x, y) => this.world.insideCity(x, y);
+    this.buildings = new BuildingRenderer(this, { meta: map.meta, buildings: [], inside }, this.roofCutter);
+    this.skyways = new BuildingRenderer(this, { meta: map.meta, buildings: [], inside }, null, 12); // a separate layer: it stays on top of Google's picture too
+    this.barriers = computeBarriers(map).barriers;
+    this.ground = new GroundStreamer(this, map, this.barriers);
     this.hud = document.getElementById('hud');
     const cam = this.cameras.main;
 
     if (this.free) {
       const w = map.meta.world;
+      this.world.update(0, 0);
       const fit = Math.min(this.scale.width / (w.maxX - w.minX + 40), this.scale.height / (w.maxY - w.minY + 40));
       const h = startFromHash();
       cam.setZoom(Number(h.z) || 16);
@@ -65,24 +70,25 @@ export class WorldScene extends Phaser.Scene {
     if (params.has('tune')) this.tuning.show();
     this.start = findStart(map);
     this.car = new Car(this.start.x, this.start.y, this.start.heading);
-    this.collision = new CollisionWorld(map);
+    this.collision = new CollisionWorld({ meta: map.meta, roads: map.roads, graph: map.graph, buildings: [] });
+    this.trackTiles();
     this.trafficOn = !params.has('notraffic');
     this.urlCars = Number(params.get('cars')) || null; // address-bar values win over the saved settings
     this.urlPeds = Number(params.get('peds')) || null;
     const seed = Number(params.get('seed')) || Math.floor(Math.random() * 1e6);
-    this.traffic = new TrafficSim(map, { count: Number(params.get('cars')) || 16, seed });
+    this.traffic = new TrafficSim(map, { count: Number(params.get('cars')) || 16, seed, radius: 450 }); // cars live only near the player
     if (this.trafficOn) this.traffic.fill(null, this.car);
     // pedestrians: they stay out of buildings, keep clear of moving cars, and the traffic stops for them
     this.pedsOn = !params.has('nopeds');
     const blocked = (x, y) => this.collision.insideSolid(x, y);
-    this.peds = new PedSim(map, this.traffic.signals, { count: Number(params.get('peds')) || 80, seed: seed + 1, blocked });
+    this.peds = new PedSim(map, this.traffic.signals, { count: Number(params.get('peds')) || 80, seed: seed + 1, blocked, radius: 350, isLoaded: (x, y) => this.world.isLoaded(x, y) }); // the walking network is built around the player as tiles arrive
     this.peds.cars = this.traffic.cars;
     this.traffic.peds = this.pedsOn ? this.peds.peds : null;
-    if (this.pedsOn) this.peds.fill(null, this.car);
+    if (this.pedsOn) this.peds.prime(this.car, { cx: this.car.x, cy: this.car.y, hw: 60, hh: 40 });
     this.blockedFn = blocked;
     // which scenery is showing: Google Earth (live, when online) or the offline look
-    this.look = new LookController({ scene: this, images: this.info.images, buildingLayer: this.buildings.g, getLook: () => this.settings.look, getStreets: () => this.settings.streets, getOverhead: () => this.settings.overhead, map, hideInGoogle: [this.skyways.g], urlLook: params.get('look'), setLook: (v) => this.tuning.set({ look: v }) });
-    this.carView = new CarView(this, map.meta.world);
+    this.look = new LookController({ scene: this, images: this.ground, world: this.world, buildingLayer: this.buildings.g, getLook: () => this.settings.look, getStreets: () => this.settings.streets, getOverhead: () => this.settings.overhead, map, hideInGoogle: [this.skyways.g], urlLook: params.get('look'), setLook: (v) => this.tuning.set({ look: v }) });
+    this.carView = new CarView(this, { minX: this.car.x - 256, minY: this.car.y - 256 });
     this.trafficView = new TrafficView(this, this.traffic);
     this.pedView = new PedView(this, this.peds);
     this.input2 = new DriveInput(this);
@@ -92,6 +98,34 @@ export class WorldScene extends Phaser.Scene {
     this.applyCamera();
     // keep the same map spot centred if the window is resized
     this.scale.on('resize', () => this.applyCamera());
+  }
+
+  /**
+   * Buildings and skyways come and go with the tiles. A building can sit in several tiles, so it is counted: it is put in when the
+   * first tile with it arrives and taken out when the last tile with it leaves (renderer, collision, everything).
+   */
+  trackTiles() {
+    const refs = new Map(), skyRefs = new Map(), skyIds = new Map();
+    const w = this.world;
+    w.onLoad.push((tile) => {
+      const fresh = [];
+      for (const b of tile.buildings) { const n = refs.get(b.id) ?? 0; refs.set(b.id, n + 1); if (!n) fresh.push(b); }
+      this.buildings.add(fresh);
+      this.peds?.tilesChanged(); // sidewalks that were waiting for building data can be built now
+      for (const b of fresh) this.collision.addBuilding(b);
+      const sk = tile.skyways.filter((k) => { const n = skyRefs.get(k.id) ?? 0; skyRefs.set(k.id, n + 1); return !n; });
+      if (sk.length) { const blocks = skywayBuildings({ skyways: sk }); this.skyways.add(blocks); for (const k of sk) skyIds.set(k.id, blocks.filter((b) => Math.floor(b.id / 10) === k.id).map((b) => b.id)); }
+    });
+    w.onUnload.push((tile) => {
+      const gone = [];
+      for (const b of tile.buildings) { const n = (refs.get(b.id) ?? 1) - 1; if (n <= 0) { refs.delete(b.id); gone.push(b.id); } else refs.set(b.id, n); }
+      this.buildings.remove(gone);
+      this.peds?.tilesChanged();
+      for (const id of gone) this.collision.removeBuilding(id);
+      for (const k of tile.skyways) { const n = (skyRefs.get(k.id) ?? 1) - 1; if (n <= 0) { skyRefs.delete(k.id); this.skyways.remove(skyIds.get(k.id) ?? []); skyIds.delete(k.id); } else skyRefs.set(k.id, n); }
+    });
+    // the tiles already loaded before this scene started
+    for (const tile of w.tiles.values()) if (tile.announced) for (const f of w.onLoad) f(tile);
   }
 
   /** push the settings into the parts of the game that use them */
@@ -116,6 +150,7 @@ export class WorldScene extends Phaser.Scene {
       const Hf = cameraHeight(this.camHeightSetting, 20, cam.zoom);
       this.buildings.update(cx, cy, cam.zoom, cam.width, cam.height, Hf);
       this.skyways.update(cx, cy, cam.zoom, cam.width, cam.height, Hf);
+      this.ground.update(cx, cy, cam.width / (2 * cam.zoom), cam.height / (2 * cam.zoom), 4);
       this.hudText(`${cam.zoom.toFixed(1)} px/m  |  view @ ${cx.toFixed(0)},${cy.toFixed(0)}`, 'two-finger scroll = pan   pinch or + / - = zoom   0 = refit   drag or arrows = pan');
       return;
     }
@@ -124,8 +159,12 @@ export class WorldScene extends Phaser.Scene {
     const car = this.car;
     if (this.input2.resetPressed()) { car.reset(this.start.x, this.start.y, this.start.heading); this.camX = car.x; this.camY = car.y; }
 
+    // tiles around the car; if the one under it has not arrived yet (a slow connection), the car waits rather than driving through buildings
+    this.world.update(car.x, car.y);
+    const tileReady = this.world.isLoaded(car.x, car.y);
+
     // fixed-step physics so handling is identical at any frame rate
-    if (!this.stopAt || this.simTime < this.stopAt) {
+    if (tileReady && (!this.stopAt || this.simTime < this.stopAt)) {
       this.acc += dt;
       while (this.acc >= STEP) {
         car.step(this.input2.read(STEP), STEP);
@@ -145,6 +184,8 @@ export class WorldScene extends Phaser.Scene {
     this.camZoom += (zoomTarget - this.camZoom) * (1 - Math.exp(-2.5 * dt));
     this.applyCamera();
     const H = cameraHeight(this.settings.camHeight, this.settings.zoomNear, this.camZoom);
+    this.ground.update(this.camX, this.camY, cam.width / (2 * this.camZoom), cam.height / (2 * this.camZoom));
+    if (!this.startLogged && this.ground.painted) { this.startLogged = true; console.log(`ground painted: ${this.ground.painted} chunks, ${this.ground.ms.toFixed(0)} ms, ${this.world.tiles.size} tiles`); }
     this.buildings.update(this.camX, this.camY, this.camZoom, cam.width, cam.height, H);
     this.skyways.update(this.camX, this.camY, this.camZoom, cam.width, cam.height, H);
     this.look.update(this.camX, this.camY, H, this.camZoom, cam.width, cam.height);

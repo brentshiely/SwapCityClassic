@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { TilesRenderer } from '3d-tiles-renderer/three';
-import { buildRoadOverlay, OVERHEAD_FROM } from './roadOverlay.js';
+import { RoadOverlay, OVERHEAD_FROM } from './roadOverlay.js';
 import { GoogleCloudAuthPlugin, GLTFExtensionsPlugin } from '3d-tiles-renderer/plugins';
 
 // Google Earth mode: Google's Photorealistic 3D Tiles drawn LIVE under the game, from a camera straight above the car.
@@ -47,10 +47,10 @@ export class EarthLayer {
    * @param topCanvas a 2D <canvas> above the game's canvas: it gets a copy of only the overhead parts of the picture
    * @param apiKey Google Maps Platform key with the Map Tiles API enabled
    * @param align the contents of data/earth_align.json
-   * @param map the game's map (its streets are drawn over Google's picture)
+   * @param world the World (its roads, parks and sidewalks are drawn over Google's picture, tile by tile)
    * @param onState (state, detail) => void   state: 'loading' | 'ready' | 'failed'
    */
-  constructor({ canvas, topCanvas, apiKey, align, map, onState }) {
+  constructor({ canvas, topCanvas, apiKey, align, world, onState }) {
     this.onState = onState;
     this.state = 'loading';
     this.canvas = canvas;
@@ -75,7 +75,7 @@ export class EarthLayer {
     tiles.setCamera(this.camera);
     this.scene.add(tiles.group);
     // our streets over Google's (covers the photographed cars; see roadOverlay.js)
-    this.overlay = buildRoadOverlay(map);
+    this.overlay = new RoadOverlay(world);
     const lift = Number(new URLSearchParams(location.search).get('roadlift'));
     if (lift > 0) this.overlay.setLift(lift);
     this.scene.add(this.overlay.group);
@@ -125,6 +125,7 @@ export class EarthLayer {
     cam.lookAt(camX, 0, camY);
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
+    this.overlay.sync();
     this.overlay.update(camX, camY, H);
     this.tiles.setResolutionFromRenderer(cam, this.renderer);
     this.tiles.update();

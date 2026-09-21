@@ -13,8 +13,8 @@ export class Signals {
     this.byNode = new Map();
     for (const n of net.nodes) {
       if (!n.signal || n.degree < 3) continue;
-      const incoming = net.directed.filter((de) => de.to === n.id);
-      if (!incoming.length) continue;
+      const incoming = net.into.get(n.id);
+      if (!incoming?.length) continue;
       const ref = net.headingAtEnd(incoming[0]);
       for (const de of incoming) {
         const d = headingsMod(net.headingAtEnd(de), ref);

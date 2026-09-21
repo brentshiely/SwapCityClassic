@@ -1,4 +1,5 @@
 import { offsetPolyline, polyInfo, junctionInfo } from '../world/geometry.js';
+import { PolyGrid } from '../world/spatial.js';
 
 // The traffic's view of the road graph: every street segment becomes one or two DIRECTED segments,
 // following what OpenStreetMap says: a one-way street can only be driven from -> to, a two-way
@@ -12,7 +13,8 @@ export const LANE_WIDTH = 3.3;
 export function buildNetwork(map) {
   const { nodes, edges } = map.graph;
   const jinfo = junctionInfo(map);
-  const out = new Map(nodes.map((n) => [n.id, []]));
+  const out = new Map(), into = new Map(); // leaving / arriving directed segments per node (into: so Signals never scans them all)
+  for (const n of nodes) { out.set(n.id, []); into.set(n.id, []); }
   const directed = [];
 
   const add = (e, dir) => {
@@ -30,6 +32,7 @@ export function buildNetwork(map) {
       lanes: new Array(nl).fill(null), signal: null,
     };
     out.get(from).push(de);
+    into.get(to).push(de);
     directed.push(de);
     return de;
   };
@@ -39,5 +42,12 @@ export function buildNetwork(map) {
   const lane = (de, i) => (de.lanes[i] ??= polyInfo(offsetPolyline(de.pts, de.offsets[i])));
   const headingAtEnd = (de) => { const p = de.pts, a = p[p.length - 2], b = p[p.length - 1]; return Math.atan2(b[1] - a[1], b[0] - a[0]); };
 
-  return { nodes, nodeById, directed, out, jinfo, lane, headingAtEnd };
+  // spatial index of the directed segments (200 m cells), built on first use: "which streets are near this point"
+  let grid = null;
+  const edgeGrid = () => {
+    if (!grid) { grid = new PolyGrid(200); for (const de of directed) grid.add(de, de.pts); }
+    return grid;
+  };
+
+  return { nodes, nodeById, directed, out, into, jinfo, lane, headingAtEnd, edgeGrid };
 }

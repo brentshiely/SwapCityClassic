@@ -40,13 +40,38 @@ export class BuildingRenderer {
     this.scratch = [0, 1, 2, 3].map(() => ({ x: 0, y: 0 }));
     this.stats = { drawn: 0, ms: 0 };
     this.world = map.meta.world;
+    this.inside = map.inside ?? null; // (x, y) => inside the playable area? buildings outside are drawn dimmer
     // A stepped building (a low base with towers on it, measured from LiDAR) arrives as blocks, each with the height it
     // starts at and the height it reaches. A plain building is one block from the ground.
     this.buildings = [];
-    for (const b of (map.buildings)) {
-      if (b.parts) for (const part of b.parts) this.buildings.push(this.prepare(b, part));
-      else this.buildings.push(this.prepare(b));
+    this.byId = new Map(); // building id -> its blocks, so a tile's buildings can be taken out again
+    this.add(map.buildings ?? []);
+  }
+
+  /** add buildings (a tile arriving); one that is already here is skipped */
+  add(list) {
+    for (const b of list) {
+      if (this.byId.has(b.id)) continue;
+      const blocks = b.parts ? b.parts.map((part) => this.prepare(b, part)) : [this.prepare(b)];
+      this.byId.set(b.id, blocks);
+      for (const k of blocks) this.buildings.push(k);
     }
+  }
+
+  /** take buildings out (a tile leaving): their roof cut-outs are freed too */
+  remove(ids) {
+    const gone = new Set();
+    for (const id of ids) {
+      const blocks = this.byId.get(id);
+      if (!blocks) continue;
+      this.byId.delete(id);
+      for (const k of blocks) {
+        gone.add(k);
+        if (k.img) { this.shown.delete(k.img); k.img.destroy(); k.img = null; }
+        if (k.roof) this.scene.textures.remove(k.roof.key);
+      }
+    }
+    if (gone.size) this.buildings = this.buildings.filter((k) => !gone.has(k));
   }
 
   prepare(b, part = null) {
@@ -73,7 +98,7 @@ export class BuildingRenderer {
     let gx0 = Infinity, gy0 = Infinity, gx1 = -Infinity, gy1 = -Infinity;
     for (const [x, y] of b.points) { gx0 = Math.min(gx0, x); gy0 = Math.min(gy0, y); gx1 = Math.max(gx1, x); gy1 = Math.max(gy1, y); }
     const w = this.world, mx = (gx0 + gx1) / 2, my = (gy0 + gy1) / 2;
-    const outside = mx < w.minX || mx > w.maxX || my < w.minY || my > w.maxY;
+    const outside = this.inside ? !this.inside(mx, my) : (mx < w.minX || mx > w.maxX || my < w.minY || my > w.maxY);
     const roof = this.roofs ? this.roofs.cut(b.id + (part ? `p${Math.round(part.top * 10)}` : ''), pts, top) : null;
     return {
       dim: outside ? 0.62 : 1, base, top, pts, edges, bbox: [x0, y0, x1, y1], group: [mx, my], roof, img: null,

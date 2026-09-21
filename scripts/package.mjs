@@ -2,7 +2,8 @@
 import { execSync } from 'node:child_process';
 import { mkdirSync, copyFileSync, writeFileSync, statSync } from 'node:fs';
 
-execSync('npm run build', { stdio: 'inherit' });
+// the single file carries the downtown city data inside (data/city_dt, from tools/map_to_city.mjs), so it needs no server and no internet
+execSync('node tools/map_to_city.mjs && npm run build', { stdio: 'inherit', env: { ...process.env, EMBED_CITY: '1' } });
 mkdirSync('release', { recursive: true });
 copyFileSync('dist/index.html', 'release/SwapCityClassic.html');
 const kb = Math.round(statSync('release/SwapCityClassic.html').size / 1024);

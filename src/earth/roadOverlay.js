@@ -25,7 +25,9 @@ const TEXTURE_METRES = { asphalt: 256 / PPM, alley: 256 / PPM, lot: 256 / PPM, p
 
 // ---- a canvas 2D lookalike that records geometry instead of pixels ----
 class Recorder {
-  constructor() {
+  /** @param clip optional {x0, y0, x1, y1}: anything entirely outside it is not recorded (a tile builds only its own part of a long street) */
+  constructor(clip = null) {
+    this.clip = clip;
     this.strokeStyle = '#000'; this.fillStyle = '#000'; this.lineWidth = 1; this.lineCap = 'round'; this.lineJoin = 'round';
     this.dash = []; this.path = []; this.m = [1, 0, 0, 1, 0, 0]; this.stack = [];
     this.batches = new Map(); // key -> { rank, pattern | null, pos: [], col: [] }
@@ -62,7 +64,9 @@ class Recorder {
       if (!st.pattern) b.col.push(...over(st.color, st.alpha));
     }
   }
+  outside(x0, y0, x1, y1) { const k = this.clip; return !!k && (x1 < k.x0 || x0 > k.x1 || y1 < k.y0 || y0 > k.y1); }
   disc(b, st, c, radius) {
+    if (this.outside(c[0] - radius, c[1] - radius, c[0] + radius, c[1] + radius)) return;
     const n = radius > 1 ? 20 : 10;
     for (let i = 0; i < n; i++) {
       const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2;
@@ -71,7 +75,7 @@ class Recorder {
   }
   quad(b, st, a, c, half) {
     const dx = c[0] - a[0], dy = c[1] - a[1], l = Math.hypot(dx, dy);
-    if (l < 1e-6) return;
+    if (l < 1e-6 || this.outside(Math.min(a[0], c[0]) - half, Math.min(a[1], c[1]) - half, Math.max(a[0], c[0]) + half, Math.max(a[1], c[1]) + half)) return;
     const nx = (-dy / l) * half, ny = (dx / l) * half;
     const p0 = [a[0] + nx, a[1] + ny], p1 = [a[0] - nx, a[1] - ny], p2 = [c[0] - nx, c[1] - ny], p3 = [c[0] + nx, c[1] + ny];
     this.tri(b, st, p0, p1, p2); this.tri(b, st, p0, p2, p3);
@@ -140,26 +144,28 @@ function dashed(pts, pattern) {
   return out;
 }
 
-/** Build the overlay for the game's map. Returns { group, update(camX, camY, H) }. */
-export function buildRoadOverlay(map) {
-  const rec = new Recorder();
-  // the ground under the roads: paver sidewalk everywhere, then parks and parking lots
-  const w = map.meta.world, x0 = w.minX - MARGIN, y0 = w.minY - MARGIN, x1 = w.maxX + MARGIN, y1 = w.maxY + MARGIN;
-  rec.raw(0, 'paver', [[x0, y0], [x1, y0], [x1, y1], [x0, y0], [x1, y1], [x0, y1]]);
-  for (const a of map.areas) {
-    const contour = a.points.map(([x, y]) => new THREE.Vector2(x, y));
-    const tris = THREE.ShapeUtils.triangulateShape(contour, []);
-    rec.raw(0.5, a.kind === 'parking' ? 'lot' : 'grass', tris.flat().map((i) => a.points[i]));
-  }
-  paintRoadLayer(rec, map, { asphalt: 'asphalt', alley: 'alley' });
-
+const makeTextures = () => {
   const tex = (seed, base) => {
     const t = new THREE.CanvasTexture(base ? asphaltTile(seed, base) : asphaltTile(seed));
     t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
     return t;
   };
   const canvasTex = (c) => { const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; };
-  const textures = { asphalt: tex(11), alley: tex(37, [64, 76, 78]), lot: tex(23, [58, 66, 70]), paver: canvasTex(paverTile(Math.round(SLAB_METRES * PPM))), grass: canvasTex(grassTile()) };
+  return { asphalt: tex(11), alley: tex(37, [64, 76, 78]), lot: tex(23, [58, 66, 70]), paver: canvasTex(paverTile(Math.round(SLAB_METRES * PPM))), grass: canvasTex(grassTile()) };
+};
+
+/** the meshes for the ground in one box: `view` is what World.view(box) returns */
+function buildBoxGroup(view, box, textures) {
+  const rec = new Recorder({ x0: box.x0 - 4, y0: box.y0 - 4, x1: box.x1 + 4, y1: box.y1 + 4 });
+  // the ground under the roads: paver sidewalk everywhere in the box (a hair over, so neighbouring boxes never leave a seam), then parks and parking lots
+  const e = 0.15, x0 = box.x0 - e, y0 = box.y0 - e, x1 = box.x1 + e, y1 = box.y1 + e;
+  rec.raw(0, 'paver', [[x0, y0], [x1, y0], [x1, y1], [x0, y0], [x1, y1], [x0, y1]]);
+  for (const a of view.areas) {
+    const contour = a.points.map(([x, y]) => new THREE.Vector2(x, y));
+    const tris = THREE.ShapeUtils.triangulateShape(contour, []);
+    rec.raw(0.5, a.kind === 'parking' ? 'lot' : 'grass', tris.flat().map((i) => a.points[i]));
+  }
+  paintRoadLayer(rec, view, { asphalt: 'asphalt', alley: 'alley' });
 
   const group = new THREE.Group();
   for (const b of [...rec.batches.values()].sort((p, q) => p.rank - q.rank)) {
@@ -171,30 +177,62 @@ export function buildRoadOverlay(map) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(position, 3));
     if (uv) g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-    else g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(b.col.map((c) => c)), 3));
+    else g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(b.col.map((c) => Math.pow(c, 2.2))), 3)); // vertex colours are sRGB-looking numbers; three wants linear
     const mat = new THREE.MeshBasicMaterial({
       side: THREE.DoubleSide, map: b.pattern ? textures[b.pattern] : null, vertexColors: !b.pattern,
       polygonOffset: true, polygonOffsetFactor: -b.rank, polygonOffsetUnits: -b.rank * 4, // later passes win over earlier ones on the same plane
     });
     if (!b.pattern) mat.color.set(0xffffff);
     const mesh = new THREE.Mesh(g, mat);
-    mesh.renderOrder = b.rank; mesh.frustumCulled = false; mesh.matrixAutoUpdate = true;
+    mesh.renderOrder = b.rank; mesh.frustumCulled = false;
     group.add(mesh);
   }
-  // vertex colours are already sRGB-looking numbers; tell three so they are not converted twice
-  group.traverse((o) => { const c = o.geometry?.getAttribute('color'); if (c) { const a = c.array; for (let i = 0; i < a.length; i++) a[i] = Math.pow(a[i], 2.2); c.needsUpdate = true; } });
-  group.matrixAutoUpdate = false;
+  group.userData.triangles = [...rec.batches.values()].reduce((s, b) => s + b.pos.length / 6, 0);
+  return group;
+}
 
-  let lift = OVERLAY_LIFT;
-  return {
-    group,
-    triangles: [...rec.batches.values()].reduce((s, b) => s + b.pos.length / 6, 0),
-    setLift(v) { lift = v; },
-    /** put the plane `lift` above the ground, scaled toward the camera so it lands where the ground point would */
-    update(camX, camZ, H) {
-      const s = Math.max(0.5, (H - lift) / H);
-      group.matrix.set(s, 0, 0, camX * (1 - s), 0, 1, 0, lift, 0, 0, s, camZ * (1 - s), 0, 0, 0, 1);
-      group.matrixWorldNeedsUpdate = true;
-    },
-  };
+/**
+ * The overlay for the whole city: one group of meshes per loaded 256 m tile, added as tiles arrive and removed as they go (sync).
+ * All the groups move together (update), so the ground lands where the ground point would appear.
+ */
+export class RoadOverlay {
+  constructor(world) {
+    this.world = world;
+    this.textures = makeTextures();
+    this.group = new THREE.Group();
+    this.group.matrixAutoUpdate = false;
+    this.tiles = new Map(); // tile key -> THREE.Group
+    this.lift = OVERLAY_LIFT;
+    this.triangles = 0;
+  }
+
+  setLift(v) { this.lift = v; }
+
+  /** build the tiles that have arrived (a few per call), drop the ones that left */
+  sync(budget = 3) {
+    const w = this.world;
+    for (const [k, g] of this.tiles) {
+      if (w.tiles.has(k)) continue;
+      this.group.remove(g);
+      g.traverse((o) => { if (o.geometry) { o.geometry.dispose(); o.material.dispose(); } });
+      this.tiles.delete(k);
+    }
+    let n = 0;
+    for (const [k, tile] of w.tiles) {
+      if (this.tiles.has(k)) continue;
+      if (n++ >= budget) break;
+      const T = w.T, box = { x0: tile.tx * T, y0: tile.ty * T, x1: (tile.tx + 1) * T, y1: (tile.ty + 1) * T };
+      const g = buildBoxGroup(w.view(box.x0 - 8, box.y0 - 8, box.x1 + 8, box.y1 + 8), box, this.textures);
+      this.tiles.set(k, g);
+      this.group.add(g);
+    }
+    this.triangles = [...this.tiles.values()].reduce((s, g) => s + g.userData.triangles, 0);
+  }
+
+  /** put the plane `lift` above the ground, scaled toward the camera so it lands where the ground point would */
+  update(camX, camZ, H) {
+    const s = Math.max(0.5, (H - this.lift) / H);
+    this.group.matrix.set(s, 0, 0, camX * (1 - s), 0, 1, 0, this.lift, 0, 0, s, camZ * (1 - s), 0, 0, 0, 1);
+    this.group.matrixWorldNeedsUpdate = true;
+  }
 }

@@ -85,7 +85,7 @@ export class CarView {
     this.brake = scene.add.image(0, 0, 'car_brake').setDisplaySize(size, wh).setDepth(5).setVisible(false);
 
     // permanent tyre marks painted into one texture covering the world
-    this.world = world;
+    this.world = { minX: world.minX, minY: world.minY }; // where the texture's top-left sits; it moves with the car (see update)
     // Power-of-two size: with mipmapping on, some browsers reject a framebuffer texture of any other size.
     // 2048 px at 4 px/m covers 512 m, more than the 439 x 423 m world, anchored at its top-left corner.
     // Tyre marks are optional: if the browser cannot spare the graphics memory for this texture (for example several copies of the
@@ -109,6 +109,14 @@ export class CarView {
     this.brake.setVisible(car.braking);
 
     // tyre marks from the rear wheels while sliding or handbraking
+    // the tyre-mark layer covers a 512 m square; when the car nears its edge it is moved to be centred on the car (old marks go)
+    if (this.skids) {
+      const w = this.world;
+      if (car.x < w.minX + 60 || car.x > w.minX + SKID_SIZE / SKID_PPM - 60 || car.y < w.minY + 60 || car.y > w.minY + SKID_SIZE / SKID_PPM - 60) {
+        w.minX = car.x - SKID_SIZE / SKID_PPM / 2; w.minY = car.y - SKID_SIZE / SKID_PPM / 2;
+        this.skids.setPosition(w.minX, w.minY); this.skids.clear();
+      }
+    }
     const sliding = car.handbraking || (Math.abs(car.sideSpeed) > 2.2 && car.speed > 4);
     if (sliding && this.skids) {
       for (const side of [-0.72, 0.72]) {

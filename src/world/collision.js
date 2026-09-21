@@ -9,6 +9,7 @@ import { CAR } from '../vehicles/carPhysics.js';
 // Pure maths, no Phaser, so it can be tested in Node.
 
 const CELL = 25; // metres per grid cell
+const SOLID_CELL = 64; // metres per cell of the building-polygon index
 const BOUNCE = 0.12; // share of the normal speed that bounces back
 const SCRAPE = 4; // m/s^2 of friction while sliding along a wall
 
@@ -24,20 +25,21 @@ const CIRCLES = [
 ];
 
 export class CollisionWorld {
+  /**
+   * @param map { meta, roads, graph, buildings? } - buildings may be empty and added later as tiles load (addBuilding / removeBuilding).
+   *        If meta.boundary (the city limit polygon) is there, the player cannot leave it: the limit is a wall with the normals pointing in.
+   */
   constructor(map) {
     this.segs = [];
     this.grid = new Map();
-    this.solids = []; // building polygons with bounding boxes, for the 'is the car inside?' safety net
+    this.solidGrid = new Map(); // building polygons by 64 m cell, for the 'is this point inside a building?' questions
+    this.byId = new Map(); // building id -> { segs, solid } so a tile's buildings can be taken out again
     this.safe = null;
     this.rescues = 0; // times the safety net had to step in (should stay 0)
     const { barriers, wall } = computeBarriers(map);
     this.wall = wall;
-    for (const b of map.buildings) {
-      if (b.type === 'roof') continue; // canopies: drive under them
-      this.addPolygon(b.points);
-      const xs = b.points.map((p) => p[0]), ys = b.points.map((p) => p[1]);
-      this.solids.push({ pts: b.points, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) });
-    }
+    for (const b of map.buildings ?? []) this.addBuilding(b);
+    if (map.meta.boundary) this.addWall(map.meta.boundary);
     for (const b of barriers) {
       const c = Math.cos(b.angle), s = Math.sin(b.angle), hx = b.thickness / 2, hy = b.length / 2;
       // corners in wound order (matching building winding: positive area)
@@ -46,24 +48,79 @@ export class CollisionWorld {
     }
   }
 
+  /** a building (or its polygon) becomes solid; the same id twice is ignored */
+  addBuilding(b) {
+    if (b.type === 'roof' || this.byId.has(b.id)) return; // roof: canopies, drive under them
+    const segs = this.addPolygon(b.points);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [x, y] of b.points) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    const solid = { pts: b.points, x0, x1, y0, y1 };
+    for (let i = Math.floor(x0 / SOLID_CELL); i <= Math.floor(x1 / SOLID_CELL); i++) for (let j = Math.floor(y0 / SOLID_CELL); j <= Math.floor(y1 / SOLID_CELL); j++) {
+      const k = i * 100000 + j;
+      (this.solidGrid.get(k) ?? this.solidGrid.set(k, []).get(k)).push(solid);
+    }
+    this.byId.set(b.id, { segs, solid });
+  }
+
+  removeBuilding(id) {
+    const e = this.byId.get(id);
+    if (!e) return;
+    this.byId.delete(id);
+    const gone = new Set(e.segs);
+    for (const seg of e.segs) for (const k of seg.cells) {
+      const list = this.grid.get(k);
+      if (!list) continue;
+      const kept = list.filter((q) => !gone.has(q));
+      if (kept.length) this.grid.set(k, kept); else this.grid.delete(k);
+    }
+    const { solid } = e;
+    for (let i = Math.floor(solid.x0 / SOLID_CELL); i <= Math.floor(solid.x1 / SOLID_CELL); i++) for (let j = Math.floor(solid.y0 / SOLID_CELL); j <= Math.floor(solid.y1 / SOLID_CELL); j++) {
+      const k = i * 100000 + j, list = this.solidGrid.get(k);
+      if (!list) continue;
+      const kept = list.filter((q) => q !== solid);
+      if (kept.length) this.solidGrid.set(k, kept); else this.solidGrid.delete(k);
+    }
+  }
+
+  /** the city limit: a closed polygon the car must stay INSIDE (each edge pushes toward the middle) */
+  addWall(poly) {
+    let area = 0;
+    for (let i = 0; i < poly.length; i++) { const [x1, y1] = poly[i], [x2, y2] = poly[(i + 1) % poly.length]; area += x1 * y2 - x2 * y1; }
+    const wind = area >= 0 ? 1 : -1;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
+      if (len < 0.05) continue;
+      // addPolygon's outward normal is (wind*dy, -wind*dx); a wall wants the opposite (into the polygon)
+      this.addSegment(a, b, (-wind * dy) / len, (wind * dx) / len, len);
+    }
+  }
+
+  addSegment(a, b, nx, ny, len) {
+    const seg = { ax: a[0], ay: a[1], bx: b[0], by: b[1], nx, ny, len, cells: [] };
+    this.segs.push(seg);
+    const x0 = Math.floor(Math.min(a[0], b[0]) / CELL), x1 = Math.floor(Math.max(a[0], b[0]) / CELL);
+    const y0 = Math.floor(Math.min(a[1], b[1]) / CELL), y1 = Math.floor(Math.max(a[1], b[1]) / CELL);
+    for (let gx = x0; gx <= x1; gx++) for (let gy = y0; gy <= y1; gy++) {
+      const k = gx * 100000 + gy;
+      (this.grid.get(k) ?? this.grid.set(k, []).get(k)).push(seg);
+      seg.cells.push(k);
+    }
+    return seg;
+  }
+
   addPolygon(pts) {
     // outward normal of an edge is (dy, -dx) for the winding the bake produces (positive area)
     let area = 0;
     for (let i = 0; i < pts.length; i++) { const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length]; area += x1 * y2 - x2 * y1; }
-    const wind = area >= 0 ? 1 : -1;
+    const wind = area >= 0 ? 1 : -1, made = [];
     for (let i = 0; i < pts.length; i++) {
       const a = pts[i], b = pts[(i + 1) % pts.length];
       const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
       if (len < 0.05) continue;
-      const seg = { ax: a[0], ay: a[1], bx: b[0], by: b[1], nx: (wind * dy) / len, ny: (-wind * dx) / len, len };
-      this.segs.push(seg);
-      const x0 = Math.floor(Math.min(a[0], b[0]) / CELL), x1 = Math.floor(Math.max(a[0], b[0]) / CELL);
-      const y0 = Math.floor(Math.min(a[1], b[1]) / CELL), y1 = Math.floor(Math.max(a[1], b[1]) / CELL);
-      for (let gx = x0; gx <= x1; gx++) for (let gy = y0; gy <= y1; gy++) {
-        const k = gx * 100000 + gy;
-        (this.grid.get(k) ?? this.grid.set(k, []).get(k)).push(seg);
-      }
+      made.push(this.addSegment(a, b, (wind * dy) / len, (-wind * dx) / len, len));
     }
+    return made;
   }
 
   near(x, y, r) {
@@ -78,7 +135,7 @@ export class CollisionWorld {
   }
 
   insideSolid(x, y) {
-    for (const b of this.solids) {
+    for (const b of this.solidGrid.get(Math.floor(x / SOLID_CELL) * 100000 + Math.floor(y / SOLID_CELL)) ?? []) {
       if (x < b.x0 || x > b.x1 || y < b.y0 || y > b.y1) continue;
       let c = false; const p = b.pts;
       for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
@@ -120,7 +177,7 @@ export class CollisionWorld {
           hit = true; moved = true;
         }
       }
-      // world wall: stay inside the rectangle
+      // world wall: stay inside the rectangle (the city limit polygon, if there is one, is in the segment grid above)
       const w = this.wall;
       const cc = Math.cos(car.heading), ss = Math.sin(car.heading);
       for (const k of CIRCLES) {

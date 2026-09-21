@@ -1,6 +1,6 @@
-import { pointAt, nearestOnPolyline } from '../world/geometry.js';
+import { pointAt } from '../world/geometry.js';
 import { mulberry32 } from '../render/rng.js';
-import { buildPedNetwork } from './pedNetwork.js';
+import { PedNetwork } from './pedNetwork.js';
 
 // Pedestrian logic, no graphics. People walk the sidewalks, round corners and across the street at the
 // painted crosswalks, waiting at the kerb until the light gives them a turn to cross. They scatter from a
@@ -16,23 +16,44 @@ const SPAWN_RADIUS = 105; // metres around the player where people appear
 const RECYCLE_RADIUS = 135; // people who wander farther than this are replaced by new ones near the player
 const CROSS_HURRY = 1.3; // people walk faster across the road
 const ROAD_CLEAR_BY = 24.0; // a crossing must be finished by then (green returns at 25)
+const KEEP_FACTOR = 1.6; // city mode: pieces of the network farther than radius * this from the player are forgotten
+const REMOVE_FACTOR = 1.3; // city mode: people farther than radius * this from the player are removed
+const HOUSEKEEP = 1.0, RETRY = 2.0; // city mode: seconds between forgetting far pieces / retrying nodes whose tiles were not loaded
 
 export class PedSim {
-  /** blocked: (x, y) => true inside a building. cars: the traffic's cars, so people do not step in front of one (set later if needed). */
-  constructor(map, signals, { count = 80, seed = 1, blocked = null } = {}) {
+  /**
+   * blocked: (x, y) => true inside a building. cars: the traffic's cars, so people do not step in front of one (set later if needed).
+   * Whole-city mode (off by default): with `radius` (metres, e.g. 350) the walking network is built lazily around the player
+   * as update() runs (at most `buildBudget` junctions per call) and only where `isLoaded(x, y)` says building data is loaded;
+   * people appear only near the player and are removed beyond radius * 1.3. Without `radius` everything is built up front, as ever.
+   */
+  constructor(map, signals, { count = 80, seed = 1, blocked = null, radius = 0, isLoaded = null, buildBudget = 6 } = {}) {
     this.signals = signals;
     this.cars = [];
-    this.net = buildPedNetwork(map, signals, blocked);
+    this.radius = radius; this.buildBudget = buildBudget;
+    this.net = new PedNetwork(map, signals, { blocked, isLoaded });
+    if (!radius) this.net.buildAll();
+    this.nextKeep = 0; this.nextRetry = RETRY; this.spawnCache = null;
     this.rand = mulberry32(seed + 1000);
     this.count = count;
     this.peds = [];
     this.t = 0;
     this.nextId = 1;
     this.tmp = {};
-    this.stats = { spawned: 0, left: 0, crossings: 0, badCrossStarts: 0, scatters: 0, nudges: 0, blocked: 0 };
-    const walk = this.net.edges.filter((e) => e.type === 'walk' && !e.blocked);
+    this.stats = { spawned: 0, left: 0, crossings: 0, badCrossStarts: 0, scatters: 0, nudges: 0, blocked: 0, frontier: 0 };
+    const walk = radius ? [] : this.net.edges.filter((e) => e.type === 'walk' && !e.blocked);
     this.spawnEdges = walk;
     this.spawnWeight = walk.reduce((a, e) => a + e.len, 0);
+  }
+
+  /** city mode: call when building tiles load or unload, so junctions that were waiting for them are built */
+  tilesChanged() { this.net.tilesChanged(); }
+
+  /** city mode: build the network round the player in one go and seed the crowd (do this once at the start; update() does it in small steps) */
+  prime(player, view = null) {
+    if (!this.radius) return;
+    this.net.ensureNear(player.x, player.y, this.radius);
+    for (let i = 0; i < 10 && this.peds.length < this.count; i++) this.fill(view, player);
   }
 
   // ---------- spawning ----------
@@ -63,10 +84,26 @@ export class PedSim {
     return !!view && Math.abs(x - view.cx) < view.hw + margin && Math.abs(y - view.cy) < view.hh + margin;
   }
 
+  /** city mode: candidate walk edges are the ones near the player, from the network's spatial index (cached until the player or the network moves on) */
+  localSpawnEdges(player) {
+    const c = this.spawnCache;
+    if (c && c.ver === this.net.version && Math.hypot(c.x - player.x, c.y - player.y) < 30) return c;
+    const edges = [];
+    this.net.queryEdges(player.x, player.y, SPAWN_RADIUS + 30, (e) => { if (e.type === 'walk' && !e.blocked) edges.push(e); });
+    return (this.spawnCache = { ver: this.net.version, x: player.x, y: player.y, edges, weight: edges.reduce((a, e) => a + e.len, 0) });
+  }
+
   fill(view, player) {
+    let spawnEdges = this.spawnEdges, spawnWeight = this.spawnWeight;
+    if (this.radius) {
+      if (!player || this.peds.length >= this.count) return;
+      const c = this.localSpawnEdges(player);
+      spawnEdges = c.edges; spawnWeight = c.weight;
+      if (!spawnEdges.length) return;
+    }
     for (let tries = 0; this.peds.length < this.count && tries < 40; tries++) {
-      let r = this.rand() * this.spawnWeight, edge = this.spawnEdges[0];
-      for (const e of this.spawnEdges) { r -= e.len; if (r <= 0) { edge = e; break; } }
+      let r = this.rand() * spawnWeight, edge = spawnEdges[0];
+      for (const e of spawnEdges) { r -= e.len; if (r <= 0) { edge = e; break; } }
       const s = 4 + this.rand() * Math.max(1, edge.len - 8), dir = this.rand() < 0.5 ? 1 : -1;
       pointAt(edge.info, s, this.tmp);
       if (this.visible(this.tmp.x, this.tmp.y, view, 12)) continue; // never appear where the player can see
@@ -75,7 +112,7 @@ export class PedSim {
         const d = Math.hypot(this.tmp.x - player.x, this.tmp.y - player.y);
         if (d < 25 || d > SPAWN_RADIUS) continue;
       }
-      this.spawn(edge, s, dir);
+      this.spawn(edge, dir > 0 ? s : edge.len - s, dir); // spawn() counts s along the walking direction; the checks above used s along the edge
     }
   }
 
@@ -118,7 +155,7 @@ export class PedSim {
     p.s += p.v * dt; p.dist += p.v * dt;
     while (p.s >= p.edge.len) {
       const node = p.dir > 0 ? p.edge.b : p.edge.a;
-      if (node.terminal) { p.dead = true; this.stats.left++; return; }
+      if (node.terminal || node.frontier) { p.dead = true; if (node.terminal) this.stats.left++; else this.stats.frontier++; return; } // frontier: the junction is not built yet
       const next = this.chooseNext(p, node);
       const over = p.s - p.edge.len;
       if (next.type === 'cross' && !this.crossOpen(next, p, node)) {
@@ -195,13 +232,8 @@ export class PedSim {
 
   /** after scattering, rejoin the nearest sidewalk, corner or crossing */
   reattach(p) {
-    let best = null;
-    for (const e of this.net.edges) {
-      if (e.blocked) continue;
-      const n = nearestOnPolyline(e.info, p.x, p.y);
-      if (!best || n.dist < best.dist) best = { e, ...n };
-    }
-    if (!best || best.dist > 18) { p.dead = true; return; }
+    const best = this.net.nearestEdge(p.x, p.y, 18, (e) => !e.blocked);
+    if (!best) { p.dead = true; return; }
     p.edge = best.e; p.s = best.s; p.dir = this.rand() < 0.5 ? 1 : -1; p.state = 'walk';
     if (p.dir < 0) p.s = best.e.len - best.s;
     p.lat = 0;
@@ -209,6 +241,13 @@ export class PedSim {
   }
 
   // ---------- the loop ----------
+  /** city mode, every frame: build a few more junctions near the player, and now and then forget far ones / retry ones that waited for tiles */
+  maintainNetwork(player) {
+    this.net.ensureNear(player.x, player.y, this.radius, this.buildBudget);
+    if (this.t > this.nextRetry) { this.nextRetry = this.t + RETRY; this.net.tilesChanged(); } // safety net in case the caller misses a tile change
+    if (this.t > this.nextKeep) { this.nextKeep = this.t + HOUSEKEEP; this.net.dropFar(player.x, player.y, this.radius * KEEP_FACTOR); }
+  }
+
   /**
    * @param dt seconds
    * @param player {x, y, vx, vy, heading}
@@ -218,13 +257,21 @@ export class PedSim {
   update(dt, player, view, blocked) {
     dt = Math.min(dt, 0.05);
     this.t += dt;
+    if (this.radius && player) this.maintainNetwork(player);
     for (const p of this.peds) {
       if (p.dead) continue;
+      if (this.radius && (p.state === 'walk' ? p.edge.gone : p.state === 'wait' && (p.edge.gone || p.waitEdge.gone))) { p.dead = true; continue; } // its street was forgotten
       if (p.state === 'flee') this.fleeStep(p, dt, blocked); else this.advance(p, dt);
     }
     let touched = 0;
     if (player) { this.scatter(player); touched = this.pushFromCar(player); }
-    if (player) for (const p of this.peds) if (Math.hypot(p.x - player.x, p.y - player.y) > RECYCLE_RADIUS && !this.visible(p.x, p.y, view, 15)) p.dead = true;
+    if (player) {
+      const far = this.radius ? this.radius * REMOVE_FACTOR : Infinity;
+      for (const p of this.peds) {
+        const d = Math.hypot(p.x - player.x, p.y - player.y);
+        if ((d > RECYCLE_RADIUS && !this.visible(p.x, p.y, view, 15)) || d > far) p.dead = true;
+      }
+    }
     for (let i = this.peds.length - 1; i >= 0; i--) if (this.peds[i].dead) this.peds.splice(i, 1);
     this.fill(view, player);
     return touched;

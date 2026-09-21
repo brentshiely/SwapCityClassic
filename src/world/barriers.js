@@ -1,6 +1,8 @@
 // Where the playable world ends. Every street that reaches the edge of the map gets a row of
 // barricades across it; the rest of the edge is a fence. Collision uses the same data (see the
 // collisions card): `barriers` are rotated rectangles, `wall` is the world rectangle to stay inside.
+import { insidePolygon } from './grid2d.js';
+
 export const BARRIER_THICKNESS = 1.2;
 
 const distToSegment = (p, a, b) => {
@@ -27,9 +29,19 @@ export function computeBarriers(map) {
     let dx = best.b[0] - best.a[0], dy = best.b[1] - best.a[1];
     const l = Math.hypot(dx, dy) || 1;
     dx /= l; dy /= l;
-    if (dx * n.x + dy * n.y < 0) { dx = -dx; dy = -dy; } // point away from the middle of the map
+    let bx = n.x, by = n.y;
+    const limit = map.meta.boundary;
+    if (limit) {
+      // the city limit is an irregular polygon and the graph's boundary nodes sit up to 60 m beyond it: walk from the node along the
+      // street, the way that reaches the inside first, and close the street where it crosses the limit
+      const reach = (sx, sy) => { for (let d = 0; d <= 100; d += 0.5) if (insidePolygon(n.x + sx * d, n.y + sy * d, limit)) return d; return Infinity; };
+      const a = reach(dx, dy), b = reach(-dx, -dy);
+      if (a === Infinity && b === Infinity) continue; // a street that never comes inside: nothing to close
+      if (a < b) { dx = -dx; dy = -dy; } // (dx, dy) points out of the city
+      bx = n.x - dx * Math.min(a, b); by = n.y - dy * Math.min(a, b);
+    } else if (dx * n.x + dy * n.y < 0) { dx = -dx; dy = -dy; } // point away from the middle of the map
     barriers.push({
-      x: n.x - dx * 0.8, y: n.y - dy * 0.8, angle: Math.atan2(dy, dx),
+      x: bx - dx * 0.8, y: by - dy * 0.8, angle: Math.atan2(dy, dx),
       length: best.r.width + 4, thickness: BARRIER_THICKNESS, street: best.r.name,
     });
   }

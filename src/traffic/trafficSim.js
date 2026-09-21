@@ -7,6 +7,11 @@ import { Signals, CYCLE } from './signals.js';
 // speed limit OpenStreetMap gives (else 25 mph), stop for red lights and for whatever is in front of
 // them (other cars and the player), turn at junctions and leave at the map edge. Cars never crash
 // into each other, they queue. Pure maths, so it can be tested in Node.
+//
+// Two scales. By default the cars roam the WHOLE map (`count` cars, anywhere). With a finite `radius` (metres) the cars only
+// exist near the player, which is what a whole-city map needs: they spawn on streets within `radius` of the player (outside
+// the view), and are removed once they are farther than radius * 1.3. Per-frame cost then depends on the cars nearby, not on
+// the size of the city.
 
 export const TYPES = [
   { name: 'compact', length: 3.9, width: 1.75, weight: 3 },
@@ -30,19 +35,25 @@ const endTangent = (info) => { const p = info.pts, a = p[p.length - 2], b = p[p.
 const startTangent = (info) => { const p = info.pts, a = p[0], b = p[1], l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [(b[0] - a[0]) / l, (b[1] - a[1]) / l]; };
 
 export class TrafficSim {
-  constructor(map, { count = 16, seed = 1 } = {}) {
+  constructor(map, { count = 16, seed = 1, radius = Infinity } = {}) {
     this.net = buildNetwork(map);
     this.signals = new Signals(this.net);
     this.rand = mulberry32(seed);
     this.count = count;
+    this.radius = radius;
     this.cars = [];
     this.t = 0;
     this.nextId = 1;
     this.tmp = {};
-    this.stats = { spawned: 0, despawned: 0, redRuns: 0, overlapSteps: 0, crashSteps: 0, ghosts: 0, wrongWay: 0 };
-    // pick streets to spawn on in proportion to their length
-    this.edgeWeights = this.net.directed.map((de) => de.edge.length);
-    this.weightSum = this.edgeWeights.reduce((a, b) => a + b, 0);
+    this.stats = { spawned: 0, despawned: 0, culled: 0, redRuns: 0, overlapSteps: 0, crashSteps: 0, ghosts: 0, wrongWay: 0 };
+    this.cumWeights = null; // whole-map spawning only, built on first use
+    if (isFinite(radius)) this.net.edgeGrid(); // index the streets now, not in the first frame
+  }
+
+  /** the point local traffic is kept around (the player, else the view's centre); null = whole-map traffic */
+  anchor(view, player) {
+    if (!isFinite(this.radius)) return null;
+    return player ?? (view ? { x: view.cx, y: view.cy } : null);
   }
 
   // ---------- route building ----------
@@ -130,10 +141,37 @@ export class TrafficSim {
     return !!view && Math.abs(x - view.cx) < view.hw + margin && Math.abs(y - view.cy) < view.hh + margin;
   }
 
+  /** the directed streets that come within `radius` of the anchor (long enough to spawn on), with running length totals for a weighted pick */
+  nearbyEdges(a) {
+    const list = [], cum = [];
+    let sum = 0;
+    this.net.edgeGrid().query(a.x, a.y, this.radius, (de) => { if (de.edge.length < 20) return; sum += de.edge.length; list.push(de); cum.push(sum); });
+    return { list, cum, sum };
+  }
+
+  /** a random index by running totals (the first one whose total reaches r) */
+  pickIndex(cum, r) {
+    let lo = 0, hi = cum.length - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid] >= r) hi = mid; else lo = mid + 1; }
+    return lo;
+  }
+
   fill(view, player) {
-    for (let tries = 0; this.cars.length < this.count && tries < 40; tries++) {
-      let r = this.rand() * this.weightSum, de = this.net.directed[0];
-      for (let i = 0; i < this.net.directed.length; i++) { r -= this.edgeWeights[i]; if (r <= 0) { de = this.net.directed[i]; break; } }
+    const a = this.anchor(view, player);
+    let near = null; // the streets around the player, looked up only when a car is actually needed
+    // (a lot of nearby streets are too short or too close to a light to hold a car, so the local first fill needs more tries)
+    for (let tries = 0, max = a ? 40 + 3 * this.count : 40; this.cars.length < this.count && tries < max; tries++) {
+      let de;
+      if (a) {
+        near ??= this.nearbyEdges(a);
+        if (!near.list.length) break;
+        de = near.list[this.pickIndex(near.cum, this.rand() * near.sum)];
+      } else {
+        // pick streets to spawn on in proportion to their length
+        if (!this.cumWeights) { let sum = 0; this.cumWeights = this.net.directed.map((d) => (sum += d.edge.length)); }
+        const cw = this.cumWeights;
+        de = this.net.directed[this.pickIndex(cw, this.rand() * cw[cw.length - 1])];
+      }
       const lane = Math.floor(this.rand() * de.nl), info = this.net.lane(de, lane);
       if (info.len < 25) continue;
       const stopS = de.signal ? info.len - (this.net.jinfo.get(de.to)?.stopDist ?? 10) : null;
@@ -142,6 +180,7 @@ export class TrafficSim {
       if (room < 1) continue;
       const s = 6 + this.rand() * room;
       const p = pointAt(info, s, this.tmp);
+      if (a && Math.hypot(p.x - a.x, p.y - a.y) > this.radius) continue; // only near the player
       if (this.visible(p.x, p.y, view, 18)) continue; // cars never pop in where the player can see
       if (player && Math.hypot(p.x - player.x, p.y - player.y) < 30) continue;
       if (this.cars.some((o) => Math.hypot(o.x - p.x, o.y - p.y) < 16)) continue;
@@ -164,6 +203,8 @@ export class TrafficSim {
    */
   leadGap(c, player) {
     const L = 6 + c.v * 2.2, rMe = c.width / 2 - 0.05, tmp = this.tmp, tmp2 = this.tmp2 ?? (this.tmp2 = {});
+    // nothing farther from this car than the probe reaches (plus what the other thing can move meanwhile) can matter: skip it fast
+    const reach = c.length / 2 + L;
     for (let d = c.length / 2 + 0.3; d <= c.length / 2 + L; d += 1.5) {
       let s = c.s + d, i = 0;
       while (i < c.segs.length - 1 && s > c.segs[i].info.len) { s -= c.segs[i].info.len; i++; }
@@ -173,6 +214,8 @@ export class TrafficSim {
       if (c.ghostT <= 0) {
         for (const o of this.cars) {
           if (o === c || o.dead || !o.segs.length) continue;
+          const far = reach + 6 + o.length + 4 * o.v;
+          if (Math.abs(o.x - c.x) > far || Math.abs(o.y - c.y) > far) continue;
           if (this.hits(o, x, y, rMe)) return { gap: d - c.length / 2, who: o };
           // cars ahead of us in our own lane are handled by the plain rule above; everything else is checked in the future too
           const os = o.segs[0], cs = c.segs[0];
@@ -188,6 +231,8 @@ export class TrafficSim {
       if (this.peds) {
         for (const p of this.peds) {
           if (p.dead) continue;
+          const pf = reach + 3 + 3 * Math.hypot(p.vx, p.vy);
+          if (Math.abs(p.x - c.x) > pf || Math.abs(p.y - c.y) > pf) continue;
           // where the person is now, and where they will be when this car gets there (someone stepping off the kerb)
           const tt = Math.min(3, t), pr = rMe + (p.edge?.type === 'cross' ? 1.3 : 0.45); // anyone on a crosswalk is given more room
           if (Math.hypot(p.x - x, p.y - y) < pr || Math.hypot(p.x + p.vx * tt - x, p.y + p.vy * tt - y) < pr) return { gap: d - c.length / 2, who: null };
@@ -206,7 +251,17 @@ export class TrafficSim {
     return (seg.denseSamples = out);
   }
 
+  /** bounding box of a connector, so two connectors far apart are ruled out without comparing their points */
+  bbox(seg) {
+    if (seg.bb) return seg.bb;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [x, y] of seg.info.pts) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    return (seg.bb = [x0 - 3.4, y0 - 3.4, x1 + 3.4, y1 + 3.4]);
+  }
+
   crosses(a, b) {
+    const ba = this.bbox(a), bb = this.bbox(b);
+    if (ba[0] > bb[2] || bb[0] > ba[2] || ba[1] > bb[3] || bb[1] > ba[3]) return false;
     const A = this.dense(a), B = this.dense(b);
     for (const p of A) for (const q of B) if (Math.hypot(p[0] - q[0], p[1] - q[1]) < 3.4) return true;
     return false;
@@ -366,7 +421,16 @@ export class TrafficSim {
   update(dt, player, view) {
     dt = Math.min(dt, 0.05);
     this.t += dt;
-    for (const c of this.cars) this.driveCar(c, dt, player);
+    // local traffic: cars that fell far behind the player go (never while the player could see them)
+    const a = this.anchor(view, player);
+    if (a) {
+      const far2 = (this.radius * 1.3) ** 2;
+      for (const c of this.cars) {
+        if (c.dead || (c.x - a.x) ** 2 + (c.y - a.y) ** 2 <= far2 || this.visible(c.x, c.y, view, 18)) continue;
+        c.dead = true; this.stats.culled++;
+      }
+    }
+    for (const c of this.cars) if (!c.dead) this.driveCar(c, dt, player);
     for (let i = this.cars.length - 1; i >= 0; i--) {
       if (this.cars[i].dead) { this.cars.splice(i, 1); this.stats.despawned++; }
     }

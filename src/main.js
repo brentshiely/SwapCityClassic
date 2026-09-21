@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import { WorldScene } from './scenes/WorldScene.js';
 import { MapDebugScene } from './scenes/MapDebugScene.js';
+import { World, fetchSource } from './world/world.js';
+import { findStart } from './world/start.js';
 
 // If the browser cannot give the game the graphics memory it needs (usually because several copies of the game or other
 // heavy tabs are open), say so plainly instead of leaving a blank screen.
@@ -27,8 +29,31 @@ function whenSized(go) {
   addEventListener('resize', onSize);
 }
 
+// The city: the road graph and city limit (city.json) load first; the tiles around the start are ready before the game begins.
+const CITY = 'city'; // served at /city/ (see vite.config.js); the tiles are fetched from there as the car drives
+async function loadCity() {
+  let city, source;
+  if (__EMBED_CITY__) { // the single-file offline build carries the downtown data inside
+    ({ city, source } = (await import('./embeddedCity.js')).embeddedCity());
+  } else {
+    const r = await fetch(`${CITY}/city.json`);
+    if (!r.ok) throw new Error(`could not load ${CITY}/city.json (${r.status})`);
+    city = await r.json();
+    source = fetchSource(CITY);
+  }
+  const world = new World(city, source);
+  const start = findStart(world);
+  await world.preload(start.x, start.y);
+  return world;
+}
+
 // Exposed so the game can be inspected and driven from the browser console while testing.
-whenSized(() => {
+whenSized(async () => {
+  let world;
+  try { world = await loadCity(); } catch (e) {
+    document.body.insertAdjacentHTML('beforeend', `<div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#14181a;color:#e8ecee;font:16px Menlo,monospace;text-align:center;padding:24px;z-index:99">Could not load the city data: ${e.message}</div>`);
+    return;
+  }
   window.__game = new Phaser.Game({
     type: Phaser.AUTO,
     parent: 'game',
@@ -39,6 +64,7 @@ whenSized(() => {
       width: '100%',
       height: '100%',
     },
+    callbacks: { preBoot: (game) => game.registry.set('world', world) },
     scene: [debug ? MapDebugScene : WorldScene],
   });
 });

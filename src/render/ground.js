@@ -1,6 +1,7 @@
 import { asphaltTile, paverTile, grassTile } from './textures.js';
 import { computeBarriers } from '../world/barriers.js';
 import { polyInfo, pointAt, junctionInfo } from '../world/geometry.js';
+import { Grid, bboxOfPoints } from '../world/grid2d.js';
 
 // The ground (sidewalks, roads, curbs, markings, crosswalks) is painted ONCE at load into large
 // raster chunks with canvas 2D, then drawn as ordinary images. Nothing here runs per frame.
@@ -113,48 +114,66 @@ export function paintRoadLayer(ctx, map, pat) {
 }
 
 // ---------- the painter ----------
-function paintChunk(ctx, map, pat, originX, originY, edge) {
+function paintChunk(ctx, view, pat, originX, originY, limit) {
   // Metres in, pixels out; patterns stay anchored to world (0,0) so chunks join seamlessly.
   ctx.setTransform(PPM, 0, 0, PPM, -originX * PPM, -originY * PPM);
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  const view = { x0: originX, y0: originY, x1: originX + CHUNK / PPM, y1: originY + CHUNK / PPM };
+  const box = { x0: originX, y0: originY, x1: originX + CHUNK / PPM, y1: originY + CHUNK / PPM };
 
   // sidewalk everywhere
   ctx.fillStyle = pat.paver;
-  ctx.fillRect(view.x0 - 1, view.y0 - 1, CHUNK / PPM + 2, CHUNK / PPM + 2);
+  ctx.fillRect(box.x0 - 1, box.y0 - 1, CHUNK / PPM + 2, CHUNK / PPM + 2);
 
   // parks and parking lots
-  for (const a of map.areas) {
+  for (const a of view.areas) {
     ctx.fillStyle = a.kind === 'parking' ? pat.lot : pat.grass;
     pathOf(ctx, a.points); ctx.closePath(); ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 0.25; ctx.stroke();
   }
 
-  paintRoadLayer(ctx, map, pat);
-  paintEdge(ctx, map, edge);
+  paintRoadLayer(ctx, view, pat);
+  paintLimit(ctx, limit, box);
 }
 
-// The edge of the playable world: dim everything outside, a fence along it, and striped
-// concrete barricades across every street that leaves the map.
-function paintEdge(ctx, map, { barriers }) {
-  const w = map.meta.world;
-  ctx.beginPath();
-  ctx.rect(w.minX - 500, w.minY - 500, w.maxX - w.minX + 1000, w.maxY - w.minY + 1000);
-  ctx.rect(w.minX, w.minY, w.maxX - w.minX, w.maxY - w.minY);
-  ctx.fillStyle = 'rgba(8,12,14,0.4)';
-  ctx.fill('evenodd');
-
-  // fence: a dark rail with posts every 3 m
-  ctx.lineCap = 'butt';
-  ctx.strokeStyle = '#2b3236'; ctx.lineWidth = 0.22;
-  ctx.strokeRect(w.minX, w.minY, w.maxX - w.minX, w.maxY - w.minY);
-  ctx.fillStyle = '#9aa3a8';
-  for (let x = w.minX; x <= w.maxX; x += 3) { ctx.fillRect(x - 0.18, w.minY - 0.18, 0.36, 0.36); ctx.fillRect(x - 0.18, w.maxY - 0.18, 0.36, 0.36); }
-  for (let y = w.minY; y <= w.maxY; y += 3) { ctx.fillRect(w.minX - 0.18, y - 0.18, 0.36, 0.36); ctx.fillRect(w.maxX - 0.18, y - 0.18, 0.36, 0.36); }
-  ctx.lineCap = 'round';
-
+// The edge of the playable world is the city limit: everything outside it is dimmed, a fence runs along it, and a row of striped
+// concrete barricades closes every street that leaves the city.
+function paintLimit(ctx, { boundary, grid, barriers }, box) {
+  if (boundary) {
+    const near = grid.query(box.x0 - 4, box.y0 - 4, box.x1 + 4, box.y1 + 4);
+    const outsideCorner = [[box.x0, box.y0], [box.x1, box.y0], [box.x1, box.y1], [box.x0, box.y1]].some(([x, y]) => !boundary.contains(x, y));
+    if (near.size || outsideCorner) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(box.x0 - 2, box.y0 - 2, box.x1 - box.x0 + 4, box.y1 - box.y0 + 4);
+      const p = boundary.points;
+      ctx.moveTo(p[0][0], p[0][1]);
+      for (let i = 1; i < p.length; i++) ctx.lineTo(p[i][0], p[i][1]);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(8,12,14,0.4)';
+      ctx.fill('evenodd');
+      ctx.restore();
+    }
+    // the fence: a dark rail with posts every 3 m
+    if (near.size) {
+      ctx.lineCap = 'butt';
+      ctx.strokeStyle = '#2b3236'; ctx.lineWidth = 0.22;
+      ctx.beginPath();
+      for (const [a, b] of near) { ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); }
+      ctx.stroke();
+      ctx.fillStyle = '#9aa3a8';
+      for (const [a, b] of near) {
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.floor(len / 3));
+        for (let k = 0; k <= n; k++) {
+          const x = a[0] + ((b[0] - a[0]) * k) / n, y = a[1] + ((b[1] - a[1]) * k) / n;
+          if (x > box.x0 - 1 && x < box.x1 + 1 && y > box.y0 - 1 && y < box.y1 + 1) ctx.fillRect(x - 0.18, y - 0.18, 0.36, 0.36);
+        }
+      }
+      ctx.lineCap = 'round';
+    }
+  }
   for (const b of barriers) {
+    if (b.x < box.x0 - 8 || b.x > box.x1 + 8 || b.y < box.y0 - 8 || b.y > box.y1 + 8) continue;
     ctx.save();
     ctx.translate(b.x, b.y);
     ctx.rotate(b.angle); // local x = out of the map, local y = across the street
@@ -182,8 +201,11 @@ function paintEdge(ctx, map, { barriers }) {
 }
 
 // A white stop line across the lanes of every approach to a signalized junction; the traffic stops here for a red light.
+// junction widths for the whole graph, computed once (a chunk sees only some of the edges but must use the widest at each junction)
+const graphInfo = (map) => (map.graph._ji ??= junctionInfo(map));
+
 function paintStopLines(ctx, map) {
-  const ji = junctionInfo(map);
+  const ji = graphInfo(map);
   ctx.fillStyle = 'rgba(240,240,232,0.92)';
   for (const e of map.graph.edges) {
     for (const end of ['to', 'from']) {
@@ -205,13 +227,9 @@ function paintStopLines(ctx, map) {
 
 function paintMarkings(ctx, map) {
   // Stop short of junctions so lane lines never run through them.
-  const half = new Map(); // node id -> widest half width meeting there
-  for (const e of map.graph.edges) {
-    const hw = Math.max(6.6, e.lanes * LANE) / 2;
-    for (const id of [e.from, e.to]) half.set(id, Math.max(half.get(id) ?? 0, hw));
-  }
+  const ji = graphInfo(map); // node id -> widest half width meeting there
   const nodeById = map.graph.nodes;
-  const clearance = (id) => (nodeById[id].degree >= 3 ? half.get(id) + 2.6 : 0);
+  const clearance = (id) => (nodeById[id].degree >= 3 ? ji.get(id).maxHalf + 2.6 : 0);
 
   const line = (pts, color, width, dash) => {
     if (!pts || pts.length < 2) return;
@@ -258,30 +276,72 @@ function paintCrosswalks(ctx, map, pat) {
   }
 }
 
-/** Paint the ground into chunk images added to `scene`. Returns timing info for the log. */
-export function buildGround(scene, map) {
-  const t0 = performance.now();
-  const w = map.meta.world;
-  const minX = Math.floor((w.minX - MARGIN) * PPM) / PPM, minY = Math.floor((w.minY - MARGIN) * PPM) / PPM;
-  const maxX = w.maxX + MARGIN, maxY = w.maxY + MARGIN;
-  const cols = Math.ceil(((maxX - minX) * PPM) / CHUNK), rows = Math.ceil(((maxY - minY) * PPM) / CHUNK);
-
-  const edge = computeBarriers(map);
-  const probe = document.createElement('canvas').getContext('2d');
-  const pat = makePatterns(probe);
-  const size = CHUNK / PPM, pad = 1 / PPM; // a hair of overlap hides seams between chunks
-  const images = [];
-
-  for (let j = 0; j < rows; j++) {
-    for (let i = 0; i < cols; i++) {
-      const originX = minX + i * size, originY = minY + j * size;
-      const c = document.createElement('canvas');
-      c.width = c.height = CHUNK;
-      paintChunk(c.getContext('2d'), map, pat, originX, originY, edge);
-      const key = `ground_${i}_${j}`;
-      scene.textures.addCanvas(key, c);
-      images.push(scene.add.image(originX - pad, originY - pad, key).setOrigin(0, 0).setDisplaySize(size + pad * 2, size + pad * 2).setDepth(0));
-    }
+/**
+ * The ground, painted on demand: 1024 px chunks (85 m at 12 px per metre) are painted the first time the camera comes near them and
+ * dropped when it leaves, so the city can be any size. Each chunk sees only the roads, junction edges, crossings and parks that touch it.
+ */
+export class GroundStreamer {
+  /** @param world a World (roads, graph, tiles); @param barriers the barricades from computeBarriers(world) */
+  constructor(scene, world, barriers) {
+    this.scene = scene; this.world = world;
+    this.size = CHUNK / PPM;
+    this.chunks = new Map(); // "i_j" -> { image, key, i, j }
+    this.images = []; // for the look controller (hidden while Google shows)
+    this.visible = true;
+    this.painted = 0; this.ms = 0;
+    this.pat = makePatterns(document.createElement('canvas').getContext('2d'));
+    // the city limit, as segments by position, plus a point-in-city test
+    const b = world.meta.boundary, segGrid = new Grid(128);
+    for (let i = 0; i < b.length; i++) { const a = b[i], c = b[(i + 1) % b.length]; segGrid.insert([a, c], Math.min(a[0], c[0]), Math.min(a[1], c[1]), Math.max(a[0], c[0]), Math.max(a[1], c[1])); }
+    this.limit = { boundary: { points: b, contains: (x, y) => world.insideCity(x, y) }, grid: segGrid, barriers };
+    // paint queue state
+    this.wantedKeys = new Set();
   }
-  return { images, barriers: edge.barriers.length, chunks: cols * rows, ms: Math.round(performance.now() - t0), pixels: cols * rows * CHUNK * CHUNK };
+
+  /**
+   * @param x, y the middle of the screen (game metres); hw, hh half the screen size in metres. Paints at most `budget` chunks per call.
+   */
+  update(x, y, hw, hh, budget = 2) {
+    const s = this.size, m = s * 0.6; // paint a little beyond the screen so the edge never shows
+    const i0 = Math.floor((x - hw - m) / s), i1 = Math.floor((x + hw + m) / s), j0 = Math.floor((y - hh - m) / s), j1 = Math.floor((y + hh + m) / s);
+    const need = [];
+    this.wantedKeys.clear();
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      const k = `${i}_${j}`; this.wantedKeys.add(k);
+      if (!this.chunks.has(k)) need.push([Math.hypot((i + 0.5) * s - x, (j + 0.5) * s - y), i, j]);
+    }
+    need.sort((a, b) => a[0] - b[0]);
+    let n = 0;
+    for (const [, i, j] of need) {
+      if (n >= budget) break;
+      if (!this.world.isLoadedAround((i + 0.5) * s, (j + 0.5) * s, s)) continue; // its parks and lots are in tiles that have not arrived yet
+      this.paint(i, j); n++;
+    }
+    // let go of chunks well away from the screen (each one is 4 MB of graphics memory)
+    for (const [k, c] of this.chunks) {
+      if (this.wantedKeys.has(k)) continue;
+      if (c.i >= i0 - 1 && c.i <= i1 + 1 && c.j >= j0 - 1 && c.j <= j1 + 1) continue;
+      this.scene.textures.remove(c.key); c.image.destroy(); this.chunks.delete(k);
+    }
+    this.images = [...this.chunks.values()].map((c) => c.image);
+  }
+
+  paint(i, j) {
+    const t0 = performance.now(), s = this.size, pad = 1 / PPM;
+    const originX = i * s, originY = j * s;
+    const x0 = originX - 6, y0 = originY - 6, x1 = originX + s + 6, y1 = originY + s + 6;
+    const view = this.world.view(x0, y0, x1, y1);
+    const c = document.createElement('canvas');
+    c.width = c.height = CHUNK;
+    paintChunk(c.getContext('2d'), view, this.pat, originX, originY, this.limit);
+    const key = `ground_${i}_${j}`;
+    if (this.scene.textures.exists(key)) this.scene.textures.remove(key);
+    this.scene.textures.addCanvas(key, c);
+    const image = this.scene.add.image(originX - pad, originY - pad, key).setOrigin(0, 0).setDisplaySize(s + pad * 2, s + pad * 2).setDepth(0).setVisible(this.visible);
+    this.chunks.set(`${i}_${j}`, { image, key, i, j });
+    this.painted++; this.ms += performance.now() - t0;
+  }
+
+  /** the look controller hides the ground while Google's picture shows */
+  setVisible(v) { this.visible = v; for (const c of this.chunks.values()) c.image.setVisible(v); return this; }
 }

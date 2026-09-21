@@ -1,4 +1,5 @@
 import { pointAt, polyInfo } from '../world/geometry.js';
+import { PolyGrid } from '../world/spatial.js';
 import { TYPES, COLORS } from './trafficSim.js';
 import { makeNpcTextures, spriteSize } from './npcSprites.js';
 
@@ -14,13 +15,16 @@ export class TrafficView {
     this.sprites = new Map();
     this.g = scene.add.graphics().setDepth(6);
     this.lamps = [];
+    this.lampGrid = new PolyGrid(64); // so a whole city's lamps cost only the ones in view each frame
     for (const { node, approaches } of sim.signals.byNode.values()) {
       for (const de of approaches) {
         // lamp: beside the stop line, on the kerb at the right-hand side of the approach
         const ji = sim.net.jinfo.get(node.id), info = polyInfo(de.pts);
         const p = pointAt(info, Math.max(0, info.len - ji.stopDist - 0.8));
         const off = de.width / 2 + 1.5; // right of the street's centre line, out on the pavement
-        this.lamps.push({ de, x: p.x - p.ty * off, y: p.y + p.tx * off });
+        const lamp = { de, x: p.x - p.ty * off, y: p.y + p.tx * off };
+        this.lamps.push(lamp);
+        this.lampGrid.add(lamp, [[lamp.x, lamp.y]]);
       }
     }
   }
@@ -55,12 +59,17 @@ export class TrafficView {
     // traffic lights
     const g = this.g;
     g.clear();
-    for (const l of this.lamps) {
-      if (view && (Math.abs(l.x - view.cx) > view.hw + 5 || Math.abs(l.y - view.cy) > view.hh + 5)) continue;
+    const drawLamp = (l) => {
       const st = sim.signals.state(l.de, sim.t);
       g.fillStyle(0x15181a, 1); g.fillRoundedRect(l.x - 0.85, l.y - 0.85, 1.7, 1.7, 0.35);
       g.fillStyle(LAMP[st], 0.28); g.fillCircle(l.x, l.y, 1.5);
       g.fillStyle(LAMP[st], 1); g.fillCircle(l.x, l.y, 0.5);
-    }
+    };
+    if (!view) { this.lamps.forEach(drawLamp); return; }
+    // the grid query is square around the view's centre; the exact test keeps the old margin
+    this.lampGrid.query(view.cx, view.cy, Math.max(view.hw, view.hh) + 5, (l) => {
+      if (Math.abs(l.x - view.cx) > view.hw + 5 || Math.abs(l.y - view.cy) > view.hh + 5) return;
+      drawLamp(l);
+    });
   }
 }

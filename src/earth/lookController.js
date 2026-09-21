@@ -12,6 +12,9 @@ import align from '../../data/earth_align.json';
 
 const KEY = typeof __GOOGLE_KEY__ === 'string' ? __GOOGLE_KEY__ : '';
 const LIMIT_PER_DAY = 40;
+// Google's picture is only lined up with our map (ground height, the flat ground the overlay and the overhead pass assume) near downtown.
+// Farther out the ground is higher or lower and the earth curves away, so past this distance the offline look is used.
+const GOOGLE_RADIUS = 1800;
 const SESSION_MINUTES = 170; // Google's session token lasts at least 3 hours; the layer renews it, which is a new billed session
 const RETRY_MS = 45000; // after a failed launch, try again this often while the internet looks up...
 const MAX_RETRIES = 6; // ...this many times (the internet coming back, the 'online' event, starts the count again)
@@ -27,7 +30,7 @@ const countSession = () => {
 export class LookController {
   /**
    * @param scene the Phaser scene (its camera background is made see-through when Google is showing)
-   * @param images the ground images (hidden while Google shows)
+   * @param images the ground streamer (hidden while Google shows)
    * @param buildingLayer the buildings' Graphics object (hidden while Google shows)
    * @param getLook () => 'auto' | 'google' | 'offline' (the saved setting)
    * @param getOverhead () => 'on' | 'off': Google's overhead parts drawn above the cars
@@ -37,8 +40,8 @@ export class LookController {
    * @param urlLook 'auto' | 'google' | 'offline' | null (the address bar wins)
    * @param setLook (value) => void, used by the G key
    */
-  constructor({ scene, images, buildingLayer, getLook, getStreets, getOverhead, map, hideInGoogle = [], urlLook, setLook }) {
-    Object.assign(this, { scene, images, buildingLayer, getLook, getStreets, getOverhead, map, hideInGoogle, urlLook, setLook });
+  constructor({ scene, images, buildingLayer, getLook, getStreets, getOverhead, map, world, hideInGoogle = [], urlLook, setLook }) {
+    Object.assign(this, { scene, images, buildingLayer, world, getLook, getStreets, getOverhead, map, hideInGoogle, urlLook, setLook });
     this.canvas = document.getElementById('earth');
     this.topCanvas = document.getElementById('earth-top');
     this.attrib = document.getElementById('earth-attrib');
@@ -63,6 +66,7 @@ export class LookController {
   /** should Google be running right now? (also records why not, for the on-screen label) */
   wanted() {
     if (!KEY) { this.reason = 'no Google key in this build'; return false; }
+    if (this.far) { this.reason = 'Google Earth is only lined up near downtown'; return false; }
     if (this.failed) {
       // a failed launch is not forever: flight wifi comes and goes. Try again later (Auto and Google, never when Offline is chosen).
       const retry = this.preference() !== 'offline' && navigator.onLine && this.retries < MAX_RETRIES && performance.now() - this.failedAt >= RETRY_MS
@@ -86,7 +90,7 @@ export class LookController {
     this.startedAt = performance.now();
     countSession();
     import('./earthLayer.js').then(({ EarthLayer }) => {
-      this.earth = new EarthLayer({ canvas: this.canvas, topCanvas: this.topCanvas, apiKey: KEY, align, map: this.map, onState: (state, detail) => { if (state === 'failed') this.fail(detail); } });
+      this.earth = new EarthLayer({ canvas: this.canvas, topCanvas: this.topCanvas, apiKey: KEY, align, world: this.world, onState: (state, detail) => { if (state === 'failed') this.fail(detail); } });
     }).catch((err) => this.fail(err?.message ?? 'could not start'));
   }
 
@@ -101,6 +105,7 @@ export class LookController {
 
   /** call every frame with the game's camera: where it looks (game metres), camera height (m), pixels per metre, screen size */
   update(camX, camY, H, zoom, w, h) {
+    this.far = Math.hypot(camX, camY) > GOOGLE_RADIUS * (this.far ? 0.92 : 1); // a little hysteresis so the edge does not flicker
     const want = this.wanted();
     if (want) this.start();
     if (this.earth && performance.now() - this.startedAt > SESSION_MINUTES * 60000) { this.startedAt = performance.now(); countSession(); } // token renewal
@@ -116,7 +121,7 @@ export class LookController {
 
   setShown(show) {
     this.shown = show;
-    for (const im of this.images) im.setVisible(!show);
+    this.images.setVisible(!show); // the ground streamer
     this.buildingLayer.setVisible(!show);
     this.canvas.style.display = show ? 'block' : 'none';
     this.topCanvas.style.display = show ? 'block' : 'none';

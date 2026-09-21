@@ -38,6 +38,8 @@ export class RoofCutter {
     if (w < 0.5 || h < 0.5) return null;
     const ppm = photoMeta.ppm, cw = Math.max(2, Math.ceil(w * ppm)), ch = Math.max(2, Math.ceil(h * ppm));
     const [sx, sy] = roofShift((x0 + x1) / 2, (y0 + y1) / 2, top);
+    // outside the photo (the rest of the city has none yet): a flat roof colour is drawn instead
+    if (x0 + sx < photoMeta.minX || y0 + sy < photoMeta.minY || x1 + sx > photoMeta.maxX || y1 + sy > photoMeta.maxY) return null;
     const c = document.createElement('canvas');
     c.width = cw; c.height = ch;
     const g = c.getContext('2d');

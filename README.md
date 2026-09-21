@@ -28,12 +28,27 @@ true north is 30 degrees anticlockwise from straight up; the rose shows that.
     npm run dev            # dev server with hot reload
     npm run build          # dist/index.html, one self-contained file
     npm run bake           # rebuild data/map.json from the saved OSM download (data/raw)
-    npm test               # handling, collision, traffic and pedestrian tests (plain Node, a few minutes)
+    npm test               # handling, collision, traffic, pedestrian, street-name and whole-city-scale tests (plain Node, a few minutes)
     npm run check-offline  # proves the build makes no network request (needs Google Chrome)
 
 `node tools/fetch_osm.mjs` downloads fresh OpenStreetMap data (needs internet; not part of the game).
 `python3 tools/lidar_heights.py --lidar <folder with dsm.npy, dem.npy, meta.json>` measures real building heights from
 USGS LiDAR into `data/heights_lidar.json` (numpy needed; the bake uses that file when present).
+
+## The whole city (tiles)
+
+The game world is all of Minneapolis, streamed. `data/city/city.json` (roads, the road graph, the city-limit polygon; loaded whole, ~10 MB)
+and `data/city/tiles/{tx}_{ty}.json` (buildings, parks and lots, sidewalks, crosswalks, skyways per 256 m tile; format in
+`design/CITY_DATA.md`) come from `npm run fetch-city` (OpenStreetMap via Overpass, resumable, ~2 h) and `npm run bake-city`.
+`src/world/world.js` keeps the tiles within 2 of the player loaded and drops those beyond 3, and announces them (`onLoad` / `onUnload`);
+`WorldScene.trackTiles` feeds each tile's buildings to the renderer and collision (counted, because a building sits in several tiles).
+Ground is painted per 85 m chunk on demand (`GroundStreamer` in `render/ground.js`); the Google overlay is built per tile
+(`RoadOverlay`); traffic (`TrafficSim radius`) and pedestrians (`PedSim radius`, `PedNetwork`) live only near the player;
+the car cannot leave the city limit (a wall along `meta.boundary`, a striped barricade across every street that crosses it).
+The car waits if the tile under it has not arrived. Downtown-only dev data: `node tools/map_to_city.mjs` -> `data/city_dt/`
+(served at `/city/` when `data/city` is missing). The single offline file (`npm run package`) embeds the downtown data (`EMBED_CITY=1`).
+Not yet city-wide: LiDAR heights and NAIP roof photos (downtown only; elsewhere heights are guessed and roofs are flat), and Google mode
+(only lined up within ~1.8 km of downtown, then the offline look). The flight build is tag `flight-2026-09-28` (+ `release/flight/`).
 
 ## Google Earth mode
 
@@ -86,6 +101,15 @@ OSM has the Minneapolis Skyway (bridge=covered ways). `tools/bake_map.mjs` keeps
 `map.skyways` (anything inside a building footprint is dropped); `src/world/skyways.js` turns each into a block that a second
 `BuildingRenderer` draws from deck height to roof height, above the cars, so traffic passes underneath. It is a separate
 layer so it also shows over Google's picture, where it covers Google's own skyway. Skyways do not collide.
+
+## Traffic and street names at city scale
+
+`new TrafficSim(map, { count, seed, radius })`: by default (`radius` unset) the cars roam the whole map, as on the downtown box.
+With a finite `radius` in metres (say 450) the cars exist only near the player: they spawn on streets within `radius` of the player
+(outside the view, over 30 m away), are removed beyond `radius * 1.3`, and `count` is how many are kept near the player. Streets are
+found through a 200 m grid (`src/world/spatial.js`), built once; `Navigator` and the signal lamps use the same kind of grid, so a frame
+costs the same on 30,000 graph nodes as on 40. `node tools/synth_city.mjs` makes a synthetic city of that size (only for tests):
+`tools/test_city_scale.mjs` builds it and drives 10 minutes through it.
 
 ## Adding a setting to the T panel
 

@@ -18,7 +18,9 @@ check('no <script>/<link>/<img> tag points at the internet', tags.length === 0, 
 const cssUrls = [...html.matchAll(/(?:@import\s+url\(|url\()\s*["']?https?:\/\/[^)"']+/gi)];
 check('no CSS @import or url() points at the internet', cssUrls.length === 0, `${cssUrls.length} found`);
 const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
-const netCalls = walk('src').filter((f) => f.endsWith('.js')).flatMap((f) => [...readFileSync(f, 'utf8').matchAll(/\b(fetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|EventSource|importScripts)/g)].map((m) => `${f}: ${m[0]}`));
+// main.js and world.js fetch the city data from the page's OWN origin (/city/); the single-file build embeds the data instead and never runs those lines
+const SAME_ORIGIN_CITY = ['src/main.js', 'src/world/world.js'];
+const netCalls = walk('src').filter((f) => f.endsWith('.js') && !SAME_ORIGIN_CITY.includes(f)).flatMap((f) => [...readFileSync(f, 'utf8').matchAll(/\b(fetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|EventSource|importScripts)/g)].map((m) => `${f}: ${m[0]}`));
 check('the game\'s own code makes no network calls (fetch, XHR, WebSocket, ...)', netCalls.length === 0, netCalls.join('; ') || 'none');
 const GOOGLE_EARTH_HOSTS = ['tile.googleapis.com', 'www.gstatic.com']; // what Google Earth mode needs: tiles, the logo, the Draco decoder
 const googleHosts = [...new Set([...html.matchAll(/https?:\/\/([a-z0-9.-]*(?:google\.com|googleapis\.com|gstatic\.com|googleusercontent\.com))/gi)].map((m) => m[1].toLowerCase()))];

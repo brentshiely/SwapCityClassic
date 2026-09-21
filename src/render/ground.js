@@ -65,6 +65,21 @@ function offset(pts, dist) {
   return res;
 }
 
+// How far to pull an alley's end back so it stops at the edge of the street it meets.
+function endTrim(streets, p) {
+  let best = null, bd = 1.5;
+  for (const r of streets) {
+    for (let i = 0; i < r.points.length - 1; i++) {
+      const a = r.points[i], b = r.points[i + 1];
+      const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2));
+      const d = Math.hypot(p[0] - (a[0] + dx * t), p[1] - (a[1] + dy * t));
+      if (d < bd) { bd = d; best = r; }
+    }
+  }
+  return best ? roadWidth(best) / 2 - 0.05 : 0;
+}
+
 // ---------- the painter ----------
 function paintChunk(ctx, map, pat, originX, originY) {
   // Metres in, pixels out; patterns stay anchored to world (0,0) so chunks join seamlessly.
@@ -93,18 +108,18 @@ function paintChunk(ctx, map, pat, originX, originY) {
   for (const r of streets) { ctx.lineWidth = roadWidth(r) + CURB * 2; pathOf(ctx, r.points); ctx.stroke(); }
   ctx.strokeStyle = pat.asphalt;
   for (const r of streets) { ctx.lineWidth = roadWidth(r); pathOf(ctx, r.points); ctx.stroke(); }
+  // Alleys stop at the street's curb (butt caps) and cut through it, instead of poking into the road.
   ctx.strokeStyle = pat.alley;
-  for (const r of roads.filter(isService)) { ctx.lineWidth = roadWidth(r); pathOf(ctx, r.points); ctx.stroke(); }
+  ctx.lineCap = 'butt';
+  for (const r of roads.filter(isService)) {
+    const pts = trim(r.points, endTrim(streets, r.points[0]), endTrim(streets, r.points[r.points.length - 1]));
+    if (!pts) continue;
+    ctx.lineWidth = roadWidth(r); pathOf(ctx, pts); ctx.stroke();
+  }
+  ctx.lineCap = 'round';
 
   paintMarkings(ctx, map);
   paintCrosswalks(ctx, map, pat);
-
-  // Flat placeholder roofs so the streets read as streets. Card "Buildings with roofs and wall faces" replaces these.
-  for (const b of map.buildings) {
-    pathOf(ctx, b.points); ctx.closePath();
-    ctx.fillStyle = '#5b666c'; ctx.fill();
-    ctx.strokeStyle = '#2f373b'; ctx.lineWidth = 0.35; ctx.stroke();
-  }
 }
 
 function paintMarkings(ctx, map) {

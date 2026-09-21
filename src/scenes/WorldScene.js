@@ -1,9 +1,10 @@
 import Phaser from 'phaser';
 import map from '../../data/map.json';
 import { buildGround, PPM } from '../render/ground.js';
+import { BuildingRenderer } from '../render/buildings.js';
 import { attachFreeCamera, startFromHash } from '../camera/freeCamera.js';
 
-// The game world. For now: the painted ground seen through the free camera.
+// The game world. For now: the painted ground and pseudo-3D buildings seen through the free camera.
 export class WorldScene extends Phaser.Scene {
   constructor() {
     super('world');
@@ -11,6 +12,7 @@ export class WorldScene extends Phaser.Scene {
 
   create() {
     this.cameras.main.setBackgroundColor(0x14181a);
+    this.buildings = new BuildingRenderer(this, map);
     const info = buildGround(this, map);
     console.log(`ground painted: ${info.chunks} chunks, ${(info.pixels / 1e6).toFixed(0)} Mpx, ${info.ms} ms`);
 
@@ -29,8 +31,10 @@ export class WorldScene extends Phaser.Scene {
 
   update() {
     const cam = this.cameras.main;
+    this.buildings.update(cam);
+    const s = this.buildings.stats;
     this.hud.textContent =
-      `${Math.round(this.game.loop.actualFps)} fps  |  ${cam.zoom.toFixed(1)} px/m  |  ground ${this.info.chunks} chunks @ ${PPM} px/m, painted in ${this.info.ms} ms\n` +
+      `${Math.round(this.game.loop.actualFps)} fps  |  ${cam.zoom.toFixed(1)} px/m  |  ${s.drawn} buildings drawn in ${s.ms.toFixed(1)} ms  |  ground ${this.info.chunks} chunks @ ${PPM} px/m\n` +
       `two-finger scroll = pan   pinch or + / - = zoom   0 = refit   drag or arrows = pan\n${map.meta.attribution}`;
   }
 }

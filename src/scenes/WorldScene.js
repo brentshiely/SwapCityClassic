@@ -4,6 +4,7 @@ import { buildGround } from '../render/ground.js';
 import { BuildingRenderer, RENDER } from '../render/buildings.js';
 import { loadSettings, saveSettings } from '../settings.js';
 import { TuningPanel } from '../ui/tuningPanel.js';
+import { NavHud } from '../ui/navHud.js';
 import { attachFreeCamera, startFromHash } from '../camera/freeCamera.js';
 import { Car, CAR, PHYSICS_STEP } from '../vehicles/carPhysics.js';
 import { CollisionWorld } from '../world/collision.js';
@@ -47,6 +48,7 @@ export class WorldScene extends Phaser.Scene {
 
     // live settings (press T): the camera, driving and world numbers, remembered in this browser
     this.settings = loadSettings();
+    this.navHud = new NavHud(map);
     this.tuning = new TuningPanel(this.settings, (st) => { saveSettings(st); this.applySettings(); });
     if (params.has('tune')) this.tuning.show();
     this.start = findStart(map);
@@ -139,6 +141,7 @@ export class WorldScene extends Phaser.Scene {
     }
     this.pedView.update();
 
+    this.navHud.update({ x: car.x, y: car.y, vx: car.vx, vy: car.vy, heading: car.heading });
     this.hudText(`${Math.round(car.speed * 3.6)} km/h  |  ${this.traffic.cars.length} cars, ${this.peds.peds.length} people`, '↑/W gas   ↓/S brake + reverse   ←→/AD steer   Space handbrake   R restart   T settings');
   }
 

@@ -18,6 +18,10 @@ top speed, grip, traffic, crowd... changes live and is remembered in your browse
 Address-bar extras (after the file name): `?cars=30` `?peds=150` `?notraffic` `?nopeds` `?free` `?debug`
 `?seed=7` (same traffic every time) `?autopilot` (scripted drive, for testing).
 
+The top of the screen shows the street you are on (both streets at a junction), your heading, the next cross
+street ahead with its distance, and a compass rose. The map is turned 30 degrees so the streets run straight, so
+true north is 30 degrees anticlockwise from straight up; the rose shows that.
+
 ## Develop
 
     npm install

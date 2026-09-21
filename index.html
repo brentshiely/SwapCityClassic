@@ -7,6 +7,11 @@
   <style>
     html, body { margin: 0; height: 100%; background: #111; overflow: hidden; }
     #game { width: 100%; height: 100%; }
+    #nav { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; max-width: calc(100% - 340px); padding: 5px 16px 5px 6px; background: rgba(16, 19, 21, 0.72); border: 1px solid rgba(255, 255, 255, 0.13); border-radius: 40px; color: #f1f3f4; pointer-events: none; box-sizing: border-box; }
+    #nav svg { flex: none; }
+    #nav .street { font: 800 17px/1.15 "Arial Black", Arial, sans-serif; letter-spacing: .05em; text-transform: uppercase; color: #ffd24a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px #000; }
+    #nav .sub { font: 12px/1.35 Menlo, monospace; color: #cfd6da; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #nav .txt { min-width: 0; }
     #tune { position: fixed; top: 8px; right: 8px; width: 290px; max-height: calc(100% - 40px); overflow-y: auto; box-sizing: border-box; padding: 10px 12px 12px; background: rgba(16, 19, 21, 0.88); color: #dfe4e7; font: 12px/1.35 Menlo, monospace; border: 1px solid #38424a; border-radius: 8px; }
     #tune[hidden] { display: none; }
     #tune h3 { margin: 0 0 6px; font-size: 13px; } #tune h3 small { color: #8a959c; font-weight: normal; margin-left: 6px; }
@@ -18,7 +23,7 @@
     #tune button:hover { background: #33404b; }
     #tune textarea { width: 100%; box-sizing: border-box; margin-top: 6px; background: #0e1113; color: #9fb0ba; border: 1px solid #38424a; border-radius: 5px; font: 10px/1.3 Menlo, monospace; resize: none; }
     #attrib { position: fixed; right: 10px; bottom: 6px; margin: 0; color: rgba(230, 234, 236, 0.78); font: 11px/1.3 Menlo, monospace; text-align: right; pointer-events: none; text-shadow: 0 1px 2px #000, 0 0 3px #000; }
-    #hud { position: fixed; left: 10px; top: 8px; margin: 0; color: #cfd5d9; font: 12px/1.5 Menlo, monospace; white-space: pre; pointer-events: none; text-shadow: 0 1px 2px #000; }
+    #hud { position: fixed; left: 10px; bottom: 6px; margin: 0; color: #cfd5d9; font: 12px/1.5 Menlo, monospace; white-space: pre; pointer-events: none; text-shadow: 0 1px 2px #000; }
   </style>
 </head>
 <body>

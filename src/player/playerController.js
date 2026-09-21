@@ -91,6 +91,7 @@ export class PlayerController {
   }
 
   enterCar() {
+    if (this.scene.wreck) { this.say('That car is a wreck: take another'); return; }
     this.mode = 'car';
     this.body.setVisible(false); this.shadow.setVisible(false);
     this.scene.traffic.obstacles = null; this.scene.traffic.walkers = null;
@@ -113,6 +114,7 @@ export class PlayerController {
       s.peds.alarm(t.x, t.y, 14);
     }
     this.stolen = true;
+    s.damage.reset(); s.wreck = false;
     s.police?.wanted.add('jack');
     this.enterCar();
     this.say('Got a new car');

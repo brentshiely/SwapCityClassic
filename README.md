@@ -62,6 +62,14 @@ The pistol (`weapon.js`, Space or click, aim with the mouse) is a hitscan shot: 
 graph. Yellow rings are the phones (M to take the job), pink is the target. Cash and finished jobs are kept in localStorage.
 Tests: `tools/test_onfoot.mjs`, `tools/test_missions.mjs`.
 
+## Car damage
+
+`src/vehicles/damage.js`: a hit (the speed lost in one moment, over 2.5 m/s) costs health; four levels (fine, dented 75, smoking 50, burning 22);
+a damaged car is weaker (top speed and acceleration x0.97 / 0.88 / 0.7, less grip); a burning car loses health until it explodes.
+`carFx.js` draws the smoke, flames and the blast; `CarView.setDamage` darkens the bodywork. The blast (9 m) kills people, destroys traffic cars
+near it and, if the player is close, WASTES them (a hospital bill of 10%, a new car at the start). Green rings are Pay 'n' Spray shops: drive in
+slowly for $100 and the car is repaired and the police forget you. The car's health is shown under the cash. Test: `tools/test_damage.mjs`.
+
 ## Sound
 
 All sound is made in code with Web Audio (`src/audio/`): `params.js` turns the state of the game into numbers (pure, tested by

@@ -104,6 +104,15 @@ export class CarView {
     this.last = null;
   }
 
+  /** the car's bodywork by damage level: 0 fine .. 3 burning (darker and duller), or hide it (a wreck is drawn dark) */
+  setDamage(level, wreck = false) {
+    if (level === this.dmgLevel && wreck === this.wreck) return;
+    this.dmgLevel = level; this.wreck = wreck;
+    const tints = [0xffffff, 0xe4e0dc, 0xb9b1a8, 0x7d7670];
+    for (const im of [this.body, this.brake]) im.setTint(wreck ? 0x2a2726 : tints[Math.max(0, Math.min(3, level))]);
+    this.brake.setVisible(false);
+  }
+
   /** the car the player is in: null = the starting sedan, or {type, colorIndex, size, wh} for a stolen one (the traffic's textures) */
   setModel(m) {
     this.body.setTexture(m ? `npc_${m.type}_${m.colorIndex}` : 'car_body');
@@ -124,7 +133,7 @@ export class CarView {
       for (const im of [this.shadow, this.body, this.brake]) im.setDisplaySize(w, h);
       const d = layer > 0 ? 8 + layer + 0.2 : 4;
       this.shadow.setDepth(d); this.body.setDepth(d + 1); this.brake.setDepth(d + 1);
-      for (const im of [this.body, this.brake]) { if (layer < 0) im.setTint(0x8d9aa6).setAlpha(0.8); else im.clearTint().setAlpha(1); }
+      for (const im of [this.body, this.brake]) { if (layer < 0) im.setTint(0x8d9aa6).setAlpha(0.8); else { im.setAlpha(1); this.dmgLevel = undefined; } }
     }
     for (const img of [this.body, this.brake]) img.setPosition(px, py).setRotation(car.heading);
     // shadow falls toward the lower right in world space

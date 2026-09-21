@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
 import map from '../../data/map.json';
+import { attachFreeCamera, startFromHash } from '../camera/freeCamera.js';
 
 // Debug view of the baked map data: roads, footprints, walkways, crossings and the road graph.
-// Mac trackpad: two-finger scroll pans, pinch zooms (or + / -), 0 refits, arrows pan, click-drag pans.
-// Keys 1-6 toggle layers. Start at a spot with #x=..&y=..&z=..
+// Same trackpad camera as the world (see camera/freeCamera.js). Keys 1-6 toggle layers.
 const LAYERS = [
   ['1', 'areas'], ['2', 'buildings'], ['3', 'roads'], ['4', 'walkways'], ['5', 'graph'], ['6', 'world'],
 ];
@@ -28,50 +28,23 @@ export class MapDebugScene extends Phaser.Scene {
     this.drawWorld(this.layers.world);
 
     const cam = this.cameras.main;
-    const h = Object.fromEntries(new URLSearchParams(location.hash.slice(1)));
+    const h = startFromHash();
     const w = map.meta.world;
     this.fit = Math.min(this.scale.width / (w.maxX - w.minX + 40), this.scale.height / (w.maxY - w.minY + 40));
     cam.setZoom(Number(h.z) || this.fit);
     cam.centerOn(Number(h.x) || 0, Number(h.y) || 0);
-
-    // Two-finger scroll arrives as wheel events; a pinch arrives as wheel events with ctrlKey set.
-    this.input.on('wheel', (p, _o, dx, dy) => {
-      if (p.event.ctrlKey) this.zoomAt(p.x, p.y, Math.exp(-dy * 0.01));
-      else {
-        cam.scrollX += dx / cam.zoom;
-        cam.scrollY += dy / cam.zoom;
-      }
-    });
-    this.input.on('pointermove', (p) => {
-      if (!p.isDown) return;
-      cam.scrollX -= (p.x - p.prevPosition.x) / cam.zoom;
-      cam.scrollY -= (p.y - p.prevPosition.y) / cam.zoom;
-    });
-    this.input.keyboard.on('keydown', (ev) => {
-      const cx = this.scale.width / 2, cy = this.scale.height / 2, step = 40 / cam.zoom;
-      const layer = LAYERS[Number(ev.key) - 1];
-      if (layer) { this.layers[layer[1]].setVisible(!this.layers[layer[1]].visible); this.updateHud(); }
-      else if (ev.key === '=' || ev.key === '+') this.zoomAt(cx, cy, 1.25);
-      else if (ev.key === '-' || ev.key === '_') this.zoomAt(cx, cy, 0.8);
-      else if (ev.key === '0') { cam.setZoom(this.fit); cam.centerOn(0, 0); }
-      else if (ev.key === 'ArrowLeft') cam.scrollX -= step;
-      else if (ev.key === 'ArrowRight') cam.scrollX += step;
-      else if (ev.key === 'ArrowUp') cam.scrollY -= step;
-      else if (ev.key === 'ArrowDown') cam.scrollY += step;
+    attachFreeCamera(this, {
+      fitZoom: this.fit,
+      onKey: (ev) => {
+        const layer = LAYERS[Number(ev.key) - 1];
+        if (!layer) return false;
+        this.layers[layer[1]].setVisible(!this.layers[layer[1]].visible);
+        this.updateHud();
+        return true;
+      },
     });
     this.hud = document.getElementById('hud');
     this.updateHud();
-  }
-
-  // Zoom while keeping the world point under (px, py) fixed on screen.
-  zoomAt(px, py, factor) {
-    const cam = this.cameras.main, w = cam.width, h = cam.height;
-    const z1 = cam.zoom, z2 = Phaser.Math.Clamp(z1 * factor, this.fit * 0.6, 14);
-    const wx = cam.scrollX + w / 2 - w / (2 * z1) + px / z1;
-    const wy = cam.scrollY + h / 2 - h / (2 * z1) + py / z1;
-    cam.setZoom(z2);
-    cam.scrollX = wx - px / z2 - w / 2 + w / (2 * z2);
-    cam.scrollY = wy - py / z2 - h / 2 + h / (2 * z2);
   }
 
   updateHud() {

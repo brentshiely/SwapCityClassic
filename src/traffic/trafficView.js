@@ -1,4 +1,6 @@
 import { pointAt, polyInfo } from '../world/geometry.js';
+import { scaleAt } from '../render/perspective.js';
+import { layerZ } from '../world/layers.js';
 import { PolyGrid } from '../world/spatial.js';
 import { TYPES, COLORS } from './trafficSim.js';
 import { makeNpcTextures, spriteSize } from './npcSprites.js';
@@ -29,7 +31,7 @@ export class TrafficView {
     }
   }
 
-  update(view) {
+  update(view, persp = null) {
     const { sim, scene } = this;
     const seen = new Set();
     for (const c of sim.cars) {
@@ -46,9 +48,20 @@ export class TrafficView {
         };
         this.sprites.set(c.id, sp);
       }
-      sp.body.setPosition(c.x, c.y).setRotation(c.heading);
-      sp.brake.setPosition(c.x, c.y).setRotation(c.heading).setVisible(c.braking);
-      sp.shadow.setPosition(c.x + 0.45, c.y + 0.6).setRotation(c.heading);
+      // a car on a bridge is above the ground (scaled away from the middle of the screen like a building's roof); one in a tunnel is dimmed
+      const layer = c.layer | 0, f = layer > 0 && persp ? scaleAt(persp.H, layerZ(layer)) : 1;
+      const px = f === 1 ? c.x : persp.cx + (c.x - persp.cx) * f, py = f === 1 ? c.y : persp.cy + (c.y - persp.cy) * f;
+      if (sp.layer !== layer || sp.f !== f) {
+        sp.layer = layer; sp.f = f;
+        const t = TYPES.find((x) => x.name === c.type), [w, h] = spriteSize(t);
+        for (const im of [sp.shadow, sp.body, sp.brake]) im.setDisplaySize(w * f, h * f);
+        const d = layer > 0 ? 8 + layer + 0.1 : 4;
+        sp.shadow.setDepth(d); sp.body.setDepth(d + 1); sp.brake.setDepth(d + 1);
+        for (const im of [sp.body, sp.brake]) { if (layer < 0) im.setTint(0x8d9aa6).setAlpha(0.8); else im.clearTint().setAlpha(1); }
+      }
+      sp.body.setPosition(px, py).setRotation(c.heading);
+      sp.brake.setPosition(px, py).setRotation(c.heading).setVisible(c.braking);
+      sp.shadow.setPosition(px + 0.45 * f, py + 0.6 * f).setRotation(c.heading);
     }
     for (const [id, sp] of this.sprites) {
       if (seen.has(id)) continue;

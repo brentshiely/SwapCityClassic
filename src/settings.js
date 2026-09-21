@@ -4,7 +4,7 @@
 export const DEFAULTS = {
   look: 'auto', streets: 'on', overhead: 'on',
   zoomNear: 20, zoomFar: 12, lookahead: 0.45,
-  vMax: 20, accel: 7.5, grip: 9, handbrakeGrip: 1.3, turnMax: 2.6,
+  vMax: 67, accel: 7.5, grip: 9, handbrakeGrip: 1.3, turnMax: 2.6,
   camHeight: 300, cars: 16, peds: 80,
 };
 
@@ -20,7 +20,7 @@ export const SPEC = [
     { key: 'lookahead', label: 'Look ahead', unit: 's', min: 0, max: 1.2, step: 0.05, hint: 'how far the view leads the car' },
   ] },
   { group: 'Driving', items: [
-    { key: 'vMax', label: 'Top speed', unit: 'm/s', min: 8, max: 40, step: 1, hint: '20 = 72 km/h' },
+    { key: 'vMax', label: 'Top speed', unit: 'm/s', min: 8, max: 67, step: 1, hint: '67 = 150 mph (the limit); 20 = 45 mph' },
     { key: 'accel', label: 'Acceleration', unit: 'm/s2', min: 3, max: 16, step: 0.5, hint: 'punch off the line' },
     { key: 'grip', label: 'Tyre grip', unit: '', min: 3, max: 20, step: 0.5, hint: 'lower = more slide' },
     { key: 'handbrakeGrip', label: 'Handbrake grip', unit: '', min: 0.3, max: 6, step: 0.1, hint: 'lower = bigger powerslide' },
@@ -51,7 +51,12 @@ const clean = (o) => {
 };
 
 export function loadSettings() {
-  try { return clean(JSON.parse(localStorage.getItem(KEY) ?? '{}')); } catch { return { ...DEFAULTS }; }
+  try {
+    const o = JSON.parse(localStorage.getItem(KEY) ?? '{}');
+    // the top speed used to be 20 m/s (45 mph); the game now tops out at 150 mph, so a saved old default moves up once
+    if (o.vMax === 20 && localStorage.getItem(KEY + '.v150') !== '1') { o.vMax = DEFAULTS.vMax; localStorage.setItem(KEY + '.v150', '1'); saveSettings(clean(o)); }
+    return clean(o);
+  } catch { return { ...DEFAULTS }; }
 }
 export function saveSettings(s) {
   try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* private window etc.: still works, just not remembered */ }

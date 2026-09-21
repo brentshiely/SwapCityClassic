@@ -50,6 +50,18 @@ The car waits if the tile under it has not arrived. Downtown-only dev data: `nod
 City-wide roof photos: `npm run fetch-naip-city` + `npm run bake-roof-tiles` write `tiles/{tx}_{ty}.jpg` (672 px, 2 px/m, 40 m margin) and `roofs.json`; the tile brings its photo and `RoofCutter` cuts roofs from it (downtown keeps its sharper global photo; the lean outside downtown is held constant). Not yet city-wide: LiDAR heights (downtown only; elsewhere heights are guessed), and Google mode
 (only lined up within ~1.8 km of downtown, then the offline look). The flight build is tag `flight-2026-09-28` (+ `release/flight/`).
 
+## Water, bridges and tunnels (layers)
+
+`water.json` (`npm run fetch-water`, `npm run bake-water`: 262 polygons) is drawn into the ground chunks; the shore is a collision wall, so
+the car stops at the water (and islands keep it on them). Every road has an OSM `layer`: 0 ground, 1..3 bridge or overpass decks, -1 tunnel.
+A car is on one layer (`src/world/layers.js`: `LayerTracker` changes it only when the car drives onto a road connected to the one it was
+on, i.e. a ramp, never by crossing over or under an unconnected road) and only collides with walls of its own layer (`CollisionWorld`
+`seg.layer`; the city limit is on every layer). Bridge decks are painted by `BridgeStreamer` (`render/bridges.js`) into transparent chunk
+images above the ground cars and drawn with the same perspective scaling as building roofs (deck height 8 m per layer); a car on a bridge
+is scaled the same way and drawn above its deck; side rails (`deckRails`) keep it on. Tunnels are painted as a dark cutaway with a concrete
+mouth (`computePortals`), the car in them is dimmed. Traffic cars carry a layer too and ignore cars on other layers. In Google mode our decks are still drawn over Google's (the
+bridge deck under ours is Google's real mesh, drawn over by our asphalt deck so a bridge looks like every other street); the overhead pass rises to the deck height while the player is on a bridge. Water is cut out of the ground overlay (a depth-only mesh) so Google's real river shows.
+
 ## Google Earth mode
 
 Online, the ground under the cars can be live Google Photorealistic 3D Tiles (`src/earth/`); offline it falls back to

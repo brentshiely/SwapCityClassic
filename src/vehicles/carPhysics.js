@@ -55,7 +55,8 @@ export class Car {
     let vf = this.vx * f + this.vy * s;
 
     // yaw: only while moving, gentler when fast, reversed when backing up
-    const turn = C.turnMax * Math.min(1, Math.abs(vf) / 2.5) * (1 - 0.5 * Math.min(1, Math.abs(vf) / C.vMax));
+    let turn = C.turnMax * Math.min(1, Math.abs(vf) / 2.5) * (1 - 0.5 * Math.min(1, Math.abs(vf) / C.vMax));
+    if (Math.abs(vf) > 25) turn *= 25 / Math.abs(vf); // at highway speed the wheel turns the car less (no changes below 25 m/s = 56 mph)
     this.yawRate = this.steer * turn * Math.sign(vf) * (input.handbrake ? 1.4 : 1);
     this.heading += this.yawRate * dt;
 

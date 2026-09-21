@@ -1,5 +1,6 @@
 import { computeBarriers } from './barriers.js';
 import { CAR } from '../vehicles/carPhysics.js';
+import { ALL_LAYERS } from './layers.js';
 
 // Car-versus-world collision. No damage: the car stops or slides along whatever it touches.
 //
@@ -51,7 +52,7 @@ export class CollisionWorld {
   /** a building (or its polygon) becomes solid; the same id twice is ignored */
   addBuilding(b) {
     if (b.type === 'roof' || this.byId.has(b.id)) return; // roof: canopies, drive under them
-    const segs = this.addPolygon(b.points);
+    const segs = this.addPolygon(b.points, 'building');
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const [x, y] of b.points) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
     const solid = { pts: b.points, x0, x1, y0, y1 };
@@ -83,7 +84,7 @@ export class CollisionWorld {
   }
 
   /** the city limit: a closed polygon the car must stay INSIDE (each edge pushes toward the middle) */
-  addWall(poly) {
+  addWall(poly, layer = ALL_LAYERS) {
     let area = 0;
     for (let i = 0; i < poly.length; i++) { const [x1, y1] = poly[i], [x2, y2] = poly[(i + 1) % poly.length]; area += x1 * y2 - x2 * y1; }
     const wind = area >= 0 ? 1 : -1;
@@ -92,12 +93,32 @@ export class CollisionWorld {
       const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
       if (len < 0.05) continue;
       // addPolygon's outward normal is (wind*dy, -wind*dx); a wall wants the opposite (into the polygon)
-      this.addSegment(a, b, (-wind * dy) / len, (wind * dx) / len, len);
+      this.addSegment(a, b, (-wind * dy) / len, (wind * dx) / len, len, layer);
     }
   }
 
-  addSegment(a, b, nx, ny, len) {
-    const seg = { ax: a[0], ay: a[1], bx: b[0], by: b[1], nx, ny, len, cells: [] };
+  /** rivers and lakes: the car is stopped at the shore (cars on a bridge over them are on another layer and pass). Islands (holes) keep the car on them. */
+  addWater(water) {
+    for (const w of water) {
+      this.addPolygon(w.outer);
+      for (const h of w.holes) this.addWall(h, 0);
+    }
+  }
+
+  /** side rails of bridges and tunnels: rails = deckRails(roads); a rail's wall faces the road, on that road's own layer */
+  addRails(rails) {
+    for (const r of rails) {
+      for (let i = 0; i < r.pts.length - 1; i++) {
+        const a = r.pts[i], b = r.pts[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
+        if (len < 0.05) continue;
+        // +1 is the right of travel; its wall faces the road (left of the direction), the other side faces right
+        this.addSegment(a, b, (r.side * dy) / len, (-r.side * dx) / len, len, r.layer);
+      }
+    }
+  }
+
+  addSegment(a, b, nx, ny, len, layer = 0, kind = 'solid') {
+    const seg = { ax: a[0], ay: a[1], bx: b[0], by: b[1], nx, ny, len, layer, kind, cells: [] };
     this.segs.push(seg);
     const x0 = Math.floor(Math.min(a[0], b[0]) / CELL), x1 = Math.floor(Math.max(a[0], b[0]) / CELL);
     const y0 = Math.floor(Math.min(a[1], b[1]) / CELL), y1 = Math.floor(Math.max(a[1], b[1]) / CELL);
@@ -109,7 +130,7 @@ export class CollisionWorld {
     return seg;
   }
 
-  addPolygon(pts) {
+  addPolygon(pts, kind = 'solid') {
     // outward normal of an edge is (dy, -dx) for the winding the bake produces (positive area)
     let area = 0;
     for (let i = 0; i < pts.length; i++) { const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length]; area += x1 * y2 - x2 * y1; }
@@ -118,7 +139,7 @@ export class CollisionWorld {
       const a = pts[i], b = pts[(i + 1) % pts.length];
       const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
       if (len < 0.05) continue;
-      made.push(this.addSegment(a, b, (wind * dy) / len, (-wind * dx) / len, len));
+      made.push(this.addSegment(a, b, (wind * dy) / len, (-wind * dx) / len, len, 0, kind));
     }
     return made;
   }
@@ -149,12 +170,15 @@ export class CollisionWorld {
   /** Push the car out of anything it overlaps and take away the speed into it. Returns true on contact. */
   resolve(car, dt = 1 / 240) {
     let hit = false, nxSum = 0, nySum = 0;
+    const layer = car.layer | 0;
     for (let pass = 0; pass < 3; pass++) {
       let moved = false;
       const c = Math.cos(car.heading), s = Math.sin(car.heading);
       for (const k of CIRCLES) {
         const cx = car.x + c * k.off - s * (k.side ?? 0), cy = car.y + s * k.off + c * (k.side ?? 0);
         for (const seg of this.near(cx, cy, k.r + 0.5)) {
+          if (seg.layer !== ALL_LAYERS && seg.layer !== layer) continue;
+          if (car.ghost && seg.kind === 'building') continue; // driving along a street that runs under this building // a wall on another level (a deck above, the street below) is not there for this car
           const ex = seg.bx - seg.ax, ey = seg.by - seg.ay;
           const t = Math.max(0, Math.min(1, ((cx - seg.ax) * ex + (cy - seg.ay) * ey) / (seg.len * seg.len)));
           const qx = seg.ax + ex * t, qy = seg.ay + ey * t;
@@ -202,7 +226,7 @@ export class CollisionWorld {
     }
 
     // safety net: if the car's centre is somehow inside a building, go back to the last safe spot
-    if (this.insideSolid(car.x, car.y)) {
+    if (layer === 0 && !car.ghost && this.insideSolid(car.x, car.y)) {
       this.rescues++;
       if (this.safe) { car.x = this.safe.x; car.y = this.safe.y; car.heading = this.safe.h; }
       car.vx = 0; car.vy = 0;

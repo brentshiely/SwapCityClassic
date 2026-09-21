@@ -134,17 +134,24 @@ def split_stepped(w, frame, proj, dsm, dem, x0, y1, cell, dcell):
     (game metres). A tier is the bounding rectangle of a raised area, clipped to the real footprint, and starts at the
     roof level of the tier below it."""
     poly = [frame.forward(p['lon'], p['lat']) for p in w['geometry']][:-1]
+    def sample_h(GX, GY):  # height above ground at game-frame points, from the downtown rasters
+        lon, lat = frame.inverse(GX, GY)
+        e, n = proj(lon, lat)
+        r = np.clip(((y1 - n) / cell).astype(int), 0, dsm.shape[0] - 1); c = np.clip(((e - x0) / cell).astype(int), 0, dsm.shape[1] - 1)
+        rd = np.clip(((y1 - n) / dcell).astype(int), 0, dem.shape[0] - 1); cd = np.clip(((e - x0) / dcell).astype(int), 0, dem.shape[1] - 1)
+        return dsm[r, c] - dem[rd, cd]
+    return split_stepped_poly(poly, sample_h)
+
+def split_stepped_poly(poly, sample_h):
+    """the core of split_stepped: poly = footprint [(x, y)...] in game metres (no closing duplicate); sample_h(GX, GY) gives the
+    roof height above ground (NaN = unknown) at arrays of game-frame points. Shared with tools/lidar_heights_city.py."""
     xs = [p[0] for p in poly]; ys = [p[1] for p in poly]
     gx0, gy0 = math.floor(min(xs)), math.floor(min(ys))
     nx = int(math.ceil((max(xs) - gx0) / GRID)) + 1; ny = int(math.ceil((max(ys) - gy0) / GRID)) + 1
     gx = gx0 + (np.arange(nx) + 0.5) * GRID; gy = gy0 + (np.arange(ny) + 0.5) * GRID
     GX, GY = np.meshgrid(gx, gy)
     valid = points_in_polygon(GX, GY, poly) & (dist_to_edges(GX, GY, poly) >= 0.6)
-    lon, lat = frame.inverse(GX, GY)
-    e, n = proj(lon, lat)
-    r = np.clip(((y1 - n) / cell).astype(int), 0, dsm.shape[0] - 1); c = np.clip(((e - x0) / cell).astype(int), 0, dsm.shape[1] - 1)
-    rd = np.clip(((y1 - n) / dcell).astype(int), 0, dem.shape[0] - 1); cd = np.clip(((e - x0) / dcell).astype(int), 0, dem.shape[1] - 1)
-    h = dsm[r, c] - dem[rd, cd]
+    h = sample_h(GX, GY)
     valid &= np.isfinite(h) & (h >= 2)
     if valid.sum() < 40: return []
     levels = plateau_levels(h[valid])
@@ -249,4 +256,5 @@ def main():
     print('\ntallest buildings by LiDAR:')
     for wid, rec in big: print(f'  {rec["h"]:6.1f} m  {names.get(wid) or "(unnamed)"}  [way {wid}]')
 
-main()
+if __name__ == '__main__':
+    main()

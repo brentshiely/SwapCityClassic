@@ -17,9 +17,18 @@ const TILE = 256;
 const ROAD_MARGIN = 60; // roads (and the traffic graph) run this far past the city limit
 
 const cfg = JSON.parse(await readFile('data/map_config.json', 'utf8'));
+// LiDAR heights and stepped-building blocks, by OSM id. The whole-city files (tools/lidar_heights_city.py) win for every id they
+// contain; the downtown files (tools/lidar_heights.py) only fill ids the city files do not have (or everything if they are absent).
 let lidar = {}, parts = {};
 try { parts = JSON.parse(await readFile('data/parts_lidar.json', 'utf8')).parts ?? {}; } catch { /* no stepped-building blocks */ }
 try { lidar = JSON.parse(await readFile('data/heights_lidar.json', 'utf8')).buildings ?? {}; } catch { console.log('  (no data/heights_lidar.json: using OSM heights and guesses)'); }
+try {
+  const cityLidar = JSON.parse(await readFile('data/heights_lidar_city.json', 'utf8')).buildings ?? {};
+  let cityParts = {};
+  try { cityParts = JSON.parse(await readFile('data/parts_lidar_city.json', 'utf8')).parts ?? {}; } catch { /* none */ }
+  for (const id of Object.keys(cityLidar)) { lidar[id] = cityLidar[id]; if (cityParts[id]) parts[id] = cityParts[id]; else delete parts[id]; }
+  console.log(`  LiDAR heights: ${Object.keys(cityLidar).length} from data/heights_lidar_city.json (${Object.keys(cityParts).length} stepped), ${Object.keys(lidar).length} in all`);
+} catch { console.log('  (no data/heights_lidar_city.json: downtown LiDAR only)'); }
 const { toGame } = makeFrame(cfg);
 
 // ---------- the city limit, in game metres ----------
@@ -249,8 +258,9 @@ const city = {
   graph: { nodes: graphNodes.map(({ id, x, y, signal, stop, boundary, degree }) => ({ id, x, y, signal, stop, boundary, degree })), edges },
 };
 await mkdir(OUT, { recursive: true });
-await rm(`${OUT}/tiles`, { recursive: true, force: true });
+// Remove the old tile JSON only: the roof photos next to them (tiles/*.jpg, data/city/roofs.json, tools/bake_roof_tiles.py) must survive a re-bake.
 await mkdir(`${OUT}/tiles`, { recursive: true });
+for (const f of await readdir(`${OUT}/tiles`)) if (f.endsWith('.json')) await rm(`${OUT}/tiles/${f}`);
 const cityStr = JSON.stringify(city);
 if (/NaN|Infinity/.test(cityStr)) throw new Error('non-finite number in city.json');
 await writeFile(`${OUT}/city.json`, cityStr);

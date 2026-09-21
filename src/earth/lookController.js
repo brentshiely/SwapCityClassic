@@ -104,13 +104,13 @@ export class LookController {
   }
 
   /** call every frame with the game's camera: where it looks (game metres), camera height (m), pixels per metre, screen size */
-  update(camX, camY, H, zoom, w, h) {
+  update(camX, camY, H, zoom, w, h, playerZ = 0) {
     this.far = Math.hypot(camX, camY) > GOOGLE_RADIUS * (this.far ? 0.92 : 1); // a little hysteresis so the edge does not flicker
     const want = this.wanted();
     if (want) this.start();
     if (this.earth && performance.now() - this.startedAt > SESSION_MINUTES * 60000) { this.startedAt = performance.now(); countSession(); } // token renewal
     const overhead = this.getOverhead() !== 'off';
-    if (want && this.earth) { this.earth.setStreetsOver(this.getStreets() !== 'off'); this.earth.setOverhead(overhead); }
+    if (want && this.earth) { this.earth.setStreetsOver(this.getStreets() !== 'off'); this.earth.setOverhead(overhead); this.earth.setOverheadFrom(3.7 + playerZ); } // on a bridge the deck itself is under the car: only what is above the deck goes over it
     if (want && this.earth) this.earth.update(camX, camY, H, zoom, w, h);
     const show = !!(want && this.earth && this.earth.state === 'ready');
     if (show !== this.shown) this.setShown(show);

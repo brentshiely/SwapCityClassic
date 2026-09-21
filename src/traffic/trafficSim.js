@@ -132,6 +132,7 @@ export class TrafficSim {
     this.plan(c);
     const p = pointAt(seg.info, s, this.tmp);
     c.x = p.x; c.y = p.y; c.heading = Math.atan2(p.ty, p.tx);
+    c.layer = de.edge.layer | 0;
     this.cars.push(c);
     this.stats.spawned++;
     return c;
@@ -213,7 +214,7 @@ export class TrafficSim {
       const t = d / Math.max(c.v, 3); // when this car would be at this point
       if (c.ghostT <= 0) {
         for (const o of this.cars) {
-          if (o === c || o.dead || !o.segs.length) continue;
+          if (o === c || o.dead || !o.segs.length || (o.layer | 0) !== (c.layer | 0)) continue; // a car on a bridge or under it is not in the way
           const far = reach + 6 + o.length + 4 * o.v;
           if (Math.abs(o.x - c.x) > far || Math.abs(o.y - c.y) > far) continue;
           if (this.hits(o, x, y, rMe)) return { gap: d - c.length / 2, who: o };
@@ -238,7 +239,7 @@ export class TrafficSim {
           if (Math.hypot(p.x - x, p.y - y) < pr || Math.hypot(p.x + p.vx * tt - x, p.y + p.vy * tt - y) < pr) return { gap: d - c.length / 2, who: null };
         }
       }
-      if (player && this.hits(player, x, y, rMe)) return { gap: d - c.length / 2, who: 'player' };
+      if (player && (player.layer | 0) === (c.layer | 0) && this.hits(player, x, y, rMe)) return { gap: d - c.length / 2, who: 'player' };
     }
     return null;
   }
@@ -283,7 +284,7 @@ export class TrafficSim {
     const myTime = myDist / Math.max(c.v, 2);
     const myRank = conn.turn ? 1 : 0;
     for (const o of this.cars) {
-      if (o === c || o.dead || !o.segs.length) continue;
+      if (o === c || o.dead || !o.segs.length || (o.layer | 0) !== (c.layer | 0)) continue;
       const os = o.segs[0];
       // queue-mates on the same street are handled by the car-in-front rule, not by right of way
       if (os.kind === 'edge' && os.de === seg.de) continue;
@@ -410,6 +411,7 @@ export class TrafficSim {
     const target = Math.atan2(p.ty, p.tx);
     c.heading += wrap(target - c.heading) * (1 - Math.exp(-12 * dt));
     c.x = p.x; c.y = p.y;
+    if (cur.kind === 'edge') c.layer = cur.de.edge.layer | 0; // on a bridge, at street level, in a tunnel (a connector keeps the layer it left)
     c.age += dt;
   }
 
@@ -472,6 +474,7 @@ export function pushPlayerOutOfTraffic(car, cars) {
   const mine = [-1.3, 0, 1.3].map((k) => [car.x + pc * k, car.y + ps * k, 0.97]);
   let hit = false;
   for (const o of cars) {
+    if ((o.layer | 0) !== (car.layer | 0)) continue;
     const oc = Math.cos(o.heading), os = Math.sin(o.heading), ro = o.width / 2 + 0.05;
     for (const k of [-0.3, 0, 0.3]) {
       const ox = o.x + oc * o.length * k, oy = o.y + os * o.length * k;

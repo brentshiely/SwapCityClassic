@@ -45,14 +45,26 @@ export class BuildingRenderer {
     // starts at and the height it reaches. A plain building is one block from the ground.
     this.buildings = [];
     this.byId = new Map(); // building id -> its blocks, so a tile's buildings can be taken out again
-    this.add(map.buildings ?? []);
+    this.pending = []; // buildings that have arrived but are not prepared yet (preparing cuts their roof photos: a dense tile takes ~100 ms)
+    this.add(map.buildings ?? [], null, true);
   }
 
-  /** add buildings (a tile arriving); one that is already here is skipped */
-  add(list, tile = null) {
-    this.tile = tile; // the tile they arrived with: its aerial photo is where their roofs are cut from
-    for (const b of list) {
+  /**
+   * add buildings (a tile arriving); one that is already here is skipped. They are prepared a few milliseconds per frame
+   * (`work`), so a tile arriving at 150 mph does not make a hitch, unless `now` asks for all of them at once (the first screen).
+   */
+  add(list, tile = null, now = false) {
+    for (const b of list) if (!this.byId.has(b.id)) this.pending.push({ b, tile });
+    if (now) this.work(Infinity);
+  }
+
+  /** prepare pending buildings for up to `ms` milliseconds (at least one) */
+  work(ms = 4) {
+    const t0 = performance.now();
+    while (this.pending.length && (performance.now() - t0 < ms || ms === Infinity)) {
+      const { b, tile } = this.pending.shift();
       if (this.byId.has(b.id)) continue;
+      this.tile = tile; // the tile they arrived with: its aerial photo is where their roofs are cut from
       const blocks = b.parts ? b.parts.map((part) => this.prepare(b, part)) : [this.prepare(b)];
       this.byId.set(b.id, blocks);
       for (const k of blocks) this.buildings.push(k);
@@ -61,6 +73,7 @@ export class BuildingRenderer {
 
   /** take buildings out (a tile leaving): their roof cut-outs are freed too */
   remove(ids) {
+    if (this.pending.length) { const drop = new Set(ids); this.pending = this.pending.filter((p) => !drop.has(p.b.id)); }
     const gone = new Set();
     for (const id of ids) {
       const blocks = this.byId.get(id);
@@ -119,6 +132,7 @@ export class BuildingRenderer {
    * @param H camera height in metres
    */
   update(cx, cy, zoom, viewW, viewH, H) {
+    this.work(4);
     const t0 = performance.now();
     if (!this.on) { this.stats.drawn = 0; this.stats.ms = 0; return; }
     const hw = viewW / (2 * zoom), hh = viewH / (2 * zoom);

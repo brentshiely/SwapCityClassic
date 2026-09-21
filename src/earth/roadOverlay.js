@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { paintRoadLayer } from '../render/ground.js';
+import { paintRoadLayer, paintTunnels, paintPortals } from '../render/ground.js';
 import { asphaltTile, paverTile, grassTile } from '../render/textures.js';
 
 // Our ground drawn OVER Google's picture (paver sidewalks everywhere, parks and parking lots, then the road surface), so the
@@ -108,6 +108,8 @@ class Recorder {
     for (const p of points) b.pos.push(p[0], p[1]);
   }
 
+  strokeRect() {} // outlines are only for the offline look
+
   fillRect(x, y, w, h) {
     const st = this.style(this.fillStyle, false), b = this.batch(st);
     const p = [this.apply(x, y), this.apply(x + w, y), this.apply(x + w, y + h), this.apply(x, y + h)];
@@ -165,7 +167,9 @@ function buildBoxGroup(view, box, textures) {
     const tris = THREE.ShapeUtils.triangulateShape(contour, []);
     rec.raw(0.5, a.kind === 'parking' ? 'lot' : 'grass', tris.flat().map((i) => a.points[i]));
   }
+  paintTunnels(rec, view); // underground roads as a dark cutaway, so a car in a tunnel is not on plain ground
   paintRoadLayer(rec, view, { asphalt: 'asphalt', alley: 'alley' });
+  paintPortals(rec, view.portals);
 
   const group = new THREE.Group();
   for (const b of [...rec.batches.values()].sort((p, q) => p.rank - q.rank)) {
@@ -184,7 +188,7 @@ function buildBoxGroup(view, box, textures) {
     });
     if (!b.pattern) mat.color.set(0xffffff);
     const mesh = new THREE.Mesh(g, mat);
-    mesh.renderOrder = b.rank; mesh.frustumCulled = false;
+    mesh.renderOrder = b.rank + 1; mesh.frustumCulled = false; // after Google's tiles (0) and the water cut-out (0.5)
     group.add(mesh);
   }
   group.userData.triangles = [...rec.batches.values()].reduce((s, b) => s + b.pos.length / 6, 0);
@@ -204,6 +208,26 @@ export class RoadOverlay {
     this.tiles = new Map(); // tile key -> THREE.Group
     this.lift = OVERLAY_LIFT;
     this.triangles = 0;
+    this.group.add(this.waterCutOut());
+  }
+
+  /**
+   * Water is left to Google's picture: a mesh over every lake and river that writes only DEPTH (no colour), a hair above the ground plane, so the
+   * ground drawn after it (pavers, roads) fails the depth test there and Google's water shows. The car cannot enter the water and a bridge
+   * over it is Google's own.
+   */
+  waterCutOut() {
+    const pos = [];
+    for (const w of this.world.water ?? []) {
+      const rings = [w.outer, ...w.holes], verts = rings.flat().map(([x, y]) => new THREE.Vector2(x, y));
+      const faces = THREE.ShapeUtils.triangulateShape(rings[0].map(([x, y]) => new THREE.Vector2(x, y)), w.holes.map((h) => h.map(([x, y]) => new THREE.Vector2(x, y))));
+      for (const f of faces) for (const i of f) pos.push(verts[i].x, 0.3, verts[i].y);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+    const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true, side: THREE.DoubleSide }));
+    mesh.renderOrder = 0.5; mesh.frustumCulled = false;
+    return mesh;
   }
 
   setLift(v) { this.lift = v; }
@@ -222,7 +246,9 @@ export class RoadOverlay {
       if (this.tiles.has(k)) continue;
       if (n++ >= budget) break;
       const T = w.T, box = { x0: tile.tx * T, y0: tile.ty * T, x1: (tile.tx + 1) * T, y1: (tile.ty + 1) * T };
-      const g = buildBoxGroup(w.view(box.x0 - 8, box.y0 - 8, box.x1 + 8, box.y1 + 8), box, this.textures);
+      const view = w.view(box.x0 - 8, box.y0 - 8, box.x1 + 8, box.y1 + 8);
+      view.portals = w.portalsIn(box.x0, box.y0, box.x1, box.y1);
+      const g = buildBoxGroup(view, box, this.textures);
       this.tiles.set(k, g);
       this.group.add(g);
     }

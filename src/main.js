@@ -42,6 +42,10 @@ async function loadCity() {
     const rr = await fetch(`${CITY}/roofs.json`).catch(() => null); // roof photos per tile, if the city was baked with them
     const roofs = rr && rr.ok ? await rr.json().catch(() => null) : null;
     city.meta.roofPhotos = roofs;
+    const wr = await fetch(`${CITY}/water.json`).catch(() => null); // rivers and lakes, if the city was baked with them
+    city.water = wr && wr.ok ? ((await wr.json().catch(() => null))?.polygons ?? []) : [];
+    const lr = roofs ? await fetch(`${CITY}/roof_lean.json`).catch(() => null) : null; // the lean per region, once LiDAR has measured it
+    city.meta.roofLean = lr && lr.ok ? await lr.json().catch(() => null) : null;
     source = fetchSource(CITY, roofs);
   }
   const world = new World(city, source);

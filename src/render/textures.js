@@ -86,3 +86,17 @@ export function grassTile(seed = 3) {
   blotches(ctx, size, rand, 8, '30,70,30', 0.10, 14, 34);
   return c;
 }
+
+// Open water: dark blue-green with soft lighter and darker swells and a few short ripple strokes (tileable).
+export function waterTile(seed = 5) {
+  const size = 256, c = canvas(size, size), ctx = c.getContext('2d'), rand = mulberry32(seed);
+  grain(ctx, size, [38, 92, 116], rand, { amp: 8, speckle: 0.006, light: 30, dark: 14 });
+  blotches(ctx, size, rand, 22, '16,52,78', 0.16, 24, 70);
+  blotches(ctx, size, rand, 18, '110,170,190', 0.10, 20, 55);
+  ctx.strokeStyle = 'rgba(190,225,235,0.22)'; ctx.lineWidth = 1.2;
+  for (let i = 0; i < 70; i++) {
+    const x = rand() * size, y = rand() * size, l = 6 + rand() * 12;
+    for (const ox of [-size, 0, size]) { ctx.beginPath(); ctx.moveTo(x + ox, y); ctx.quadraticCurveTo(x + ox + l / 2, y - 2, x + ox + l, y); ctx.stroke(); }
+  }
+  return c;
+}

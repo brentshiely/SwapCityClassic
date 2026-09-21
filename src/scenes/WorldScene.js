@@ -1,8 +1,10 @@
 import Phaser from 'phaser';
 import { GroundStreamer } from '../render/ground.js';
+import { BridgeStreamer } from '../render/bridges.js';
+import { LayerTracker, deckRails, layerZ } from '../world/layers.js';
 import { computeBarriers } from '../world/barriers.js';
 import { BuildingRenderer } from '../render/buildings.js';
-import { RoofCutter, ROOF_PHOTO } from '../render/roofs.js';
+import { RoofCutter, LeanTable, ROOF_PHOTO } from '../render/roofs.js';
 import { cameraHeight } from '../render/perspective.js';
 import { loadSettings, saveSettings } from '../settings.js';
 import { TuningPanel } from '../ui/tuningPanel.js';
@@ -43,12 +45,14 @@ export class WorldScene extends Phaser.Scene {
     this.world = this.registry.get('world');
     const map = this.world; // the parts of the game that only need roads and the graph take the World as their map
     this.roofCutter = new RoofCutter(this);
+    if (map.meta.roofLean) this.roofCutter.lean = new LeanTable(map.meta.roofLean);
     this.roofCutter.tileMeta = map.meta.roofPhotos ? { ...map.meta.roofPhotos, tileSize: map.meta.tileSize } : null;
     const inside = (x, y) => this.world.insideCity(x, y);
     this.buildings = new BuildingRenderer(this, { meta: map.meta, buildings: [], inside }, this.roofCutter);
     this.skyways = new BuildingRenderer(this, { meta: map.meta, buildings: [], inside }, null, 12); // a separate layer: it stays on top of Google's picture too
     this.barriers = computeBarriers(map).barriers;
     this.ground = new GroundStreamer(this, map, this.barriers);
+    this.bridges = new BridgeStreamer(this, map); // decks of bridges and overpasses, drawn over the street below
     this.hud = document.getElementById('hud');
     const cam = this.cameras.main;
 
@@ -72,6 +76,9 @@ export class WorldScene extends Phaser.Scene {
     this.start = findStart(map);
     this.car = new Car(this.start.x, this.start.y, this.start.heading);
     this.collision = new CollisionWorld({ meta: map.meta, roads: map.roads, graph: map.graph, buildings: [] });
+    this.collision.addRails(deckRails(map.roads)); // rails along bridges and tunnels keep a car on its deck
+    if (map.water.length) this.collision.addWater(map.water);
+    this.layers = new LayerTracker(this.world);
     this.trackTiles();
     this.trafficOn = !params.has('notraffic');
     this.urlCars = Number(params.get('cars')) || null; // address-bar values win over the saved settings
@@ -81,7 +88,7 @@ export class WorldScene extends Phaser.Scene {
     if (this.trafficOn) this.traffic.fill(null, this.car);
     // pedestrians: they stay out of buildings, keep clear of moving cars, and the traffic stops for them
     this.pedsOn = !params.has('nopeds');
-    const blocked = (x, y) => this.collision.insideSolid(x, y);
+    const blocked = (x, y) => this.collision.insideSolid(x, y) || this.world.inWater(x, y);
     this.peds = new PedSim(map, this.traffic.signals, { count: Number(params.get('peds')) || 80, seed: seed + 1, blocked, radius: 350, isLoaded: (x, y) => this.world.isLoaded(x, y) }); // the walking network is built around the player as tiles arrive
     this.peds.cars = this.traffic.cars;
     this.traffic.peds = this.pedsOn ? this.peds.peds : null;
@@ -127,6 +134,7 @@ export class WorldScene extends Phaser.Scene {
     });
     // the tiles already loaded before this scene started
     for (const tile of w.tiles.values()) if (tile.announced) for (const f of w.onLoad) f(tile);
+    this.buildings.work(Infinity); this.skyways.work(Infinity); // the first screen is ready at once
   }
 
   /** push the settings into the parts of the game that use them */
@@ -158,7 +166,12 @@ export class WorldScene extends Phaser.Scene {
 
     const dt = Math.min(delta / 1000, 0.05);
     const car = this.car;
-    if (this.input2.resetPressed()) { car.reset(this.start.x, this.start.y, this.start.heading); this.camX = car.x; this.camY = car.y; }
+    if (this.input2.resetPressed()) { car.reset(this.start.x, this.start.y, this.start.heading); this.layers.reset(0); this.camX = car.x; this.camY = car.y; }
+    car.layer = this.layers.update(car.x, car.y, car.heading); // on a bridge, under it, or in a tunnel
+    // a street that runs under a building (a garage over a street, a tunnel that ends inside one): while the car is ON that street and its
+    // nose is in the building, the building's walls do not stop it
+    const nose = { x: car.x + Math.cos(car.heading) * 3, y: car.y + Math.sin(car.heading) * 3 };
+    car.ghost = this.layers.onRoad && (this.collision.insideSolid(car.x, car.y) || this.collision.insideSolid(nose.x, nose.y));
 
     // tiles around the car; if the one under it has not arrived yet (a slow connection), the car waits rather than driving through buildings
     this.world.update(car.x, car.y);
@@ -175,26 +188,27 @@ export class WorldScene extends Phaser.Scene {
         this.simTime += STEP;
       }
     }
-    this.carView.update(car);
+    this.carView.update(car, { cx: this.camX, cy: this.camY, H: cameraHeight(this.settings.camHeight, this.settings.zoomNear, this.camZoom) });
 
     // camera: look ahead in the direction of travel, ease out as the car speeds up
     const k = 1 - Math.exp(-6 * dt);
     this.camX += (car.x + car.vx * this.settings.lookahead - this.camX) * k;
     this.camY += (car.y + car.vy * this.settings.lookahead - this.camY) * k;
-    const zoomTarget = Phaser.Math.Linear(this.settings.zoomNear, this.settings.zoomFar, Math.min(1, car.speed / CAR.vMax));
+    const zoomTarget = Phaser.Math.Linear(this.settings.zoomNear, this.settings.zoomFar, Math.min(1, car.speed / Math.min(CAR.vMax, 45))); // fully zoomed out from 45 m/s (100 mph) up
     this.camZoom += (zoomTarget - this.camZoom) * (1 - Math.exp(-2.5 * dt));
     this.applyCamera();
     const H = cameraHeight(this.settings.camHeight, this.settings.zoomNear, this.camZoom);
     this.ground.update(this.camX, this.camY, cam.width / (2 * this.camZoom), cam.height / (2 * this.camZoom));
     if (!this.startLogged && this.ground.painted) { this.startLogged = true; console.log(`ground painted: ${this.ground.painted} chunks, ${this.ground.ms.toFixed(0)} ms, ${this.world.tiles.size} tiles`); }
+    this.bridges.update(this.camX, this.camY, cam.width / (2 * this.camZoom), cam.height / (2 * this.camZoom), H);
     this.buildings.update(this.camX, this.camY, this.camZoom, cam.width, cam.height, H);
     this.skyways.update(this.camX, this.camY, this.camZoom, cam.width, cam.height, H);
-    this.look.update(this.camX, this.camY, H, this.camZoom, cam.width, cam.height);
+    this.look.update(this.camX, this.camY, H, this.camZoom, cam.width, cam.height, layerZ(car.layer | 0));
 
     // traffic: cars spawn only outside what the player can see
     const view = { cx: this.camX, cy: this.camY, hw: cam.width / (2 * this.camZoom), hh: cam.height / (2 * this.camZoom) };
     if (this.trafficOn && (!this.stopAt || this.simTime < this.stopAt)) this.traffic.update(dt, { x: car.x, y: car.y, heading: car.heading }, view);
-    this.trafficView.update(view);
+    this.trafficView.update(view, { cx: this.camX, cy: this.camY, H });
     if (this.pedsOn && (!this.stopAt || this.simTime < this.stopAt)) {
       const touched = this.peds.update(dt, { x: car.x, y: car.y, vx: car.vx, vy: car.vy, heading: car.heading }, view, this.blockedFn);
       if (touched) { const k = 0.985 ** touched; car.vx *= k; car.vy *= k; } // a nudge barely slows the car
@@ -202,7 +216,7 @@ export class WorldScene extends Phaser.Scene {
     this.pedView.update();
 
     this.navHud.update({ x: car.x, y: car.y, vx: car.vx, vy: car.vy, heading: car.heading });
-    this.hudText(`${Math.round(car.speed * 3.6)} km/h  |  ${this.traffic.cars.length} cars, ${this.peds.peds.length} people  |  ${this.look.label}`, '↑/W gas   ↓/S brake + reverse   ←→/AD steer   Space handbrake   R restart   T settings   G scenery');
+    this.hudText(`${Math.round(car.speed * 2.23694)} mph (${Math.round(car.speed * 3.6)} km/h)  |  ${this.traffic.cars.length} cars, ${this.peds.peds.length} people  |  ${this.look.label}`, '↑/W gas   ↓/S brake + reverse   ←→/AD steer   Space handbrake   R restart   T settings   G scenery');
   }
 
   hudText(left, controls) {

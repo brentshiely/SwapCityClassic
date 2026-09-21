@@ -21,6 +21,15 @@ export function roofShift(x, y, height) {
   return [height * (lean.x[0] * cx + lean.x[1] * cy + lean.x[2]), height * (lean.y[0] * cx + lean.y[1] * cy + lean.y[2])];
 }
 
+/** the roof lean per 1500 m region of the city (data/city/roof_lean.json): a roof of height h is displaced by h * (ax, ay) in the photo */
+export class LeanTable {
+  constructor(t) { this.cell = t.cell; this.lean = t.lean; this.fallback = t.fallback ?? [-0.1, 0.055]; }
+  shift(x, y, h) {
+    const l = this.lean[`${Math.floor(x / this.cell)}_${Math.floor(y / this.cell)}`] ?? this.fallback;
+    return [h * l[0], h * l[1]];
+  }
+}
+
 export class RoofCutter {
   /** @param scene the Phaser scene whose texture manager holds the loaded photo (ROOF_PHOTO.key) */
   constructor(scene) {
@@ -29,6 +38,7 @@ export class RoofCutter {
     this.photo = tex ? tex.getSourceImage() : null;
     this.count = 0;
     this.tileMeta = null; // { ppm, margin, tileSize } of the per-tile roof photos, when the city has them
+    this.lean = null; // per-region roof lean (LeanTable), when the city was measured with LiDAR (tools/roof_lean_city.py)
   }
 
   /**
@@ -41,11 +51,12 @@ export class RoofCutter {
     const w = x1 - x0, h = y1 - y0;
     if (w < 0.5 || h < 0.5) return null;
     const cw = Math.max(2, Math.ceil(w * 3)), ch = Math.max(2, Math.ceil(h * 3)); // cut-out size: 3 px per metre (a tile photo has fewer, and is stretched)
-    const [sx, sy] = roofShift((x0 + x1) / 2, (y0 + y1) / 2, top);
+    let [sx, sy] = roofShift((x0 + x1) / 2, (y0 + y1) / 2, top);
     // the photo to cut from: the sharp downtown one if the roof is inside it, else the photo of the tile it arrived with (with its margin)
     let photo = null, ox = photoMeta.minX, oy = photoMeta.minY, ppm = photoMeta.ppm;
     if (this.photo && x0 + sx >= photoMeta.minX && y0 + sy >= photoMeta.minY && x1 + sx <= photoMeta.maxX && y1 + sy <= photoMeta.maxY) photo = this.photo;
     else if (tile?.photo && this.tileMeta) {
+      if (this.lean) [sx, sy] = this.lean.shift((x0 + x1) / 2, (y0 + y1) / 2, top); // this part of the city was photographed from another point: its own lean
       const { ppm: tp, margin: m, tileSize: T } = this.tileMeta;
       ox = tile.tx * T - m; oy = tile.ty * T - m; ppm = tp;
       if (x0 + sx >= ox && y0 + sy >= oy && x1 + sx <= ox + T + 2 * m && y1 + sy <= oy + T + 2 * m) photo = tile.photo;

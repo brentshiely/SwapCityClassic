@@ -1,4 +1,4 @@
-import { asphaltTile, paverTile, grassTile } from './textures.js';
+import { asphaltTile, paverTile, grassTile, waterTile } from './textures.js';
 import { computeBarriers } from '../world/barriers.js';
 import { polyInfo, pointAt, junctionInfo } from '../world/geometry.js';
 import { Grid, bboxOfPoints } from '../world/grid2d.js';
@@ -7,7 +7,7 @@ import { Grid, bboxOfPoints } from '../world/grid2d.js';
 // raster chunks with canvas 2D, then drawn as ordinary images. Nothing here runs per frame.
 // World units are metres; 1 metre = PPM texture pixels.
 export const PPM = 12;
-const CHUNK = 1024; // pixels; a power of two so the GPU can mipmap it
+export const CHUNK = 1024; // pixels; a power of two so the GPU can mipmap it
 const MARGIN = 45; // metres of ground painted beyond the playable world
 const CURB = 0.4;
 const LANE = 3.3;
@@ -16,7 +16,7 @@ const SLAB_METRES = 2.5;
 const roadWidth = (r) => r.width;
 const isService = (r) => r.highway === 'service';
 
-function makePatterns(ctx) {
+export function makePatterns(ctx) {
   // One texel = one device pixel at PPM, so scale the pattern down by PPM in user space.
   const make = (source) => {
     const p = ctx.createPattern(source, 'repeat');
@@ -29,11 +29,12 @@ function makePatterns(ctx) {
     lot: make(asphaltTile(23, [58, 66, 70])),
     alley: make(asphaltTile(37, [64, 76, 78])),
     grass: make(grassTile()),
+    water: make(waterTile()),
   };
 }
 
 // ---------- polyline helpers (metres) ----------
-function pathOf(ctx, pts) {
+export function pathOf(ctx, pts) {
   ctx.beginPath();
   ctx.moveTo(pts[0][0], pts[0][1]);
   for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
@@ -88,9 +89,9 @@ function endTrim(streets, p) {
  * recorder of the Google Earth road overlay (src/earth/roadOverlay.js), so both looks share one description of the streets.
  * `pat.asphalt` / `pat.alley` are fill styles (canvas patterns, or plain names for the recorder).
  */
-export function paintRoadLayer(ctx, map, pat) {
-  // roads at street level or above, lowest layer first (tunnels are not painted on the surface)
-  const roads = map.roads.filter((r) => r.layer >= 0).sort((a, b) => a.layer - b.layer);
+export function paintRoadLayer(ctx, map, pat, layer = 0) {
+  // the roads of one layer: the ground (0), or the deck of a bridge (1, 2, 3) painted by BridgeStreamer
+  const roads = map.roads.filter((r) => r.layer === layer);
   const streets = roads.filter((r) => !isService(r));
   ctx.strokeStyle = 'rgba(30,34,30,0.28)';
   for (const r of streets) { ctx.lineWidth = roadWidth(r) + (CURB + 0.35) * 2; pathOf(ctx, r.points); ctx.stroke(); }
@@ -108,9 +109,9 @@ export function paintRoadLayer(ctx, map, pat) {
   }
   ctx.lineCap = 'round';
 
-  paintMarkings(ctx, map);
-  paintCrosswalks(ctx, map, pat);
-  paintStopLines(ctx, map);
+  paintMarkings(ctx, map, layer);
+  if (layer === 0) paintCrosswalks(ctx, map, pat);
+  paintStopLines(ctx, map, layer);
 }
 
 // ---------- the painter ----------
@@ -132,8 +133,53 @@ function paintChunk(ctx, view, pat, originX, originY, limit) {
     ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 0.25; ctx.stroke();
   }
 
+  paintWater(ctx, view.water, pat);
+  paintTunnels(ctx, view);
   paintRoadLayer(ctx, view, pat);
+  paintPortals(ctx, view.portals);
   paintLimit(ctx, limit, box);
+}
+
+// Rivers and lakes: water with a pale bank line; the car is stopped at the shore (collision.addWater) and bridges cross above.
+function paintWater(ctx, water, pat) {
+  if (!water?.length) return;
+  for (const w of water) {
+    ctx.beginPath();
+    for (const ring of [w.outer, ...w.holes]) { ctx.moveTo(ring[0][0], ring[0][1]); for (let i = 1; i < ring.length; i++) ctx.lineTo(ring[i][0], ring[i][1]); ctx.closePath(); }
+    ctx.fillStyle = pat.water; ctx.fill('evenodd');
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(20,52,68,0.55)'; ctx.lineWidth = 1.6; ctx.stroke(); // the shore, dark on the water side
+    ctx.strokeStyle = 'rgba(214,220,200,0.75)'; ctx.lineWidth = 0.35; ctx.stroke(); // and a pale bank line
+  }
+}
+
+// A tunnel seen as a cutaway: the road underground drawn dim on a dark strip, so you can still see where the car is going.
+export function paintTunnels(ctx, view) {
+  const tunnels = view.roads.filter((r) => r.layer < 0);
+  if (!tunnels.length) return;
+  ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(10,13,15,0.9)';
+  for (const r of tunnels) { ctx.lineWidth = r.width + 4.4; pathOf(ctx, r.points); ctx.stroke(); }
+  ctx.strokeStyle = 'rgba(46,54,58,0.95)';
+  for (const r of tunnels) { ctx.lineWidth = r.width; pathOf(ctx, r.points); ctx.stroke(); }
+  ctx.setLineDash([2.4, 4.2]); ctx.strokeStyle = 'rgba(220,210,140,0.35)'; ctx.lineWidth = 0.16;
+  for (const r of tunnels) { pathOf(ctx, r.points); ctx.stroke(); }
+  ctx.setLineDash([]); ctx.lineCap = 'round';
+}
+
+// The concrete mouth of a tunnel: a slab across the road end with the dark opening in it.
+export function paintPortals(ctx, portals) {
+  for (const p of portals ?? []) {
+    ctx.save();
+    ctx.translate(p.x, p.y); ctx.rotate(p.angle); // local +x points out of the tunnel
+    const W = p.width + 5, T = 3.4;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(-T + 0.4, -W / 2 + 0.5, T, W); // shadow
+    ctx.fillStyle = '#a3a69c'; ctx.fillRect(-T, -W / 2, T, W); // the slab
+    ctx.fillStyle = '#12161a'; ctx.fillRect(-T + 0.5, -p.width / 2, T - 0.5, p.width); // the opening
+    ctx.fillStyle = '#6f736b'; ctx.fillRect(-T, -W / 2, 0.5, W); // the lip
+    ctx.strokeStyle = 'rgba(30,34,30,0.75)'; ctx.lineWidth = 0.14; ctx.strokeRect(-T, -W / 2, T, W);
+    ctx.restore();
+  }
 }
 
 // The edge of the playable world is the city limit: everything outside it is dimmed, a fence runs along it, and a row of striped
@@ -204,10 +250,11 @@ function paintLimit(ctx, { boundary, grid, barriers }, box) {
 // junction widths for the whole graph, computed once (a chunk sees only some of the edges but must use the widest at each junction)
 const graphInfo = (map) => (map.graph._ji ??= junctionInfo(map));
 
-function paintStopLines(ctx, map) {
+function paintStopLines(ctx, map, layer = 0) {
   const ji = graphInfo(map);
   ctx.fillStyle = 'rgba(240,240,232,0.92)';
   for (const e of map.graph.edges) {
+    if (e.layer !== layer) continue;
     for (const end of ['to', 'from']) {
       const node = map.graph.nodes[end === 'to' ? e.to : e.from];
       if (!node.signal || node.degree < 3) continue;
@@ -225,7 +272,7 @@ function paintStopLines(ctx, map) {
   }
 }
 
-function paintMarkings(ctx, map) {
+function paintMarkings(ctx, map, layer = 0) {
   // Stop short of junctions so lane lines never run through them.
   const ji = graphInfo(map); // node id -> widest half width meeting there
   const nodeById = map.graph.nodes;
@@ -240,7 +287,7 @@ function paintMarkings(ctx, map) {
   };
 
   for (const e of map.graph.edges) {
-    if (e.layer < 0) continue;
+    if (e.layer !== layer) continue;
     const pts = trim(e.points, clearance(e.from), clearance(e.to));
     if (!pts) continue;
     const L = e.lanes;
@@ -331,6 +378,7 @@ export class GroundStreamer {
     const originX = i * s, originY = j * s;
     const x0 = originX - 6, y0 = originY - 6, x1 = originX + s + 6, y1 = originY + s + 6;
     const view = this.world.view(x0, y0, x1, y1);
+    view.water = this.world.waterIn(x0, y0, x1, y1); view.portals = this.world.portalsIn(x0, y0, x1, y1);
     const c = document.createElement('canvas');
     c.width = c.height = CHUNK;
     paintChunk(c.getContext('2d'), view, this.pat, originX, originY, this.limit);

@@ -99,6 +99,7 @@ export class EarthLayer {
     this.onState?.('failed', reason);
   }
 
+  setOverheadFrom(y) { this.overheadPlane.constant = -y; }
   setStreetsOver(on) { this.overlay.group.visible = on; }
   /** draw the overhead parts of the picture above the cars (on), or leave everything under them (off) */
   setOverhead(on) { this.overhead = on; if (!on) this.topCtx.clearRect(0, 0, this.w ?? 0, this.h ?? 0); }

@@ -1,5 +1,6 @@
 import { insidePolygon, bboxOfPoints, Grid } from './grid2d.js';
 import { junctionInfo } from './geometry.js';
+import { computePortals } from './layers.js';
 
 // The whole city as the game sees it: the road graph is loaded once (city.json), everything else (buildings, parks and lots,
 // sidewalks, crosswalks, skyways) arrives in 256 m tiles as the player moves. This class decides which tiles are wanted, fetches
@@ -35,6 +36,7 @@ export class World {
     this.meta = city.meta;
     this.roads = city.roads;
     this.graph = city.graph;
+    this.water = city.water ?? []; // rivers and lakes (water.json), set by main.js when the city has them
     this.T = city.meta.tileSize ?? 256;
     this.source = source;
     Object.assign(this, { loadRadius, keepRadius, parallel });
@@ -97,6 +99,26 @@ export class World {
       graph: { nodes: this.graph.nodes, edges: [...this.edgeGrid.query(x0, y0, x1, y1)], _ji: this.graph._ji },
       crossings: this.featuresIn('crossings', x0, y0, x1, y1), areas: this.featuresIn('areas', x0, y0, x1, y1),
     };
+  }
+
+  /** graph edges whose bounding box touches the square of half-side r around (x, y) */
+  edgesNear(x, y, r) { this.view(x, y, x, y, 0); return [...this.edgeGrid.query(x - r, y - r, x + r, y + r)]; }
+
+  /** water polygons (city.water: [{ outer, holes }]) whose box touches the given box */
+  waterIn(x0, y0, x1, y1) {
+    return (this.water ?? []).filter((w) => { const b = w._bb ?? (w._bb = bboxOfPoints(w.outer)); return b[2] >= x0 && b[0] <= x1 && b[3] >= y0 && b[1] <= y1; });
+  }
+
+  /** is (x, y) in the water (an island in a lake is not)? */
+  inWater(x, y) {
+    for (const w of this.waterIn(x, y, x, y)) if (insidePolygon(x, y, w.outer) && !w.holes.some((h) => insidePolygon(x, y, h))) return true;
+    return false;
+  }
+
+  /** tunnel mouths in the box */
+  portalsIn(x0, y0, x1, y1) {
+    this.portals ??= computePortals(this.graph);
+    return this.portals.filter((p) => p.x >= x0 - 8 && p.x <= x1 + 8 && p.y >= y0 - 8 && p.y <= y1 + 8);
   }
 
   insideCity(x, y) {

@@ -1,3 +1,5 @@
+import { scaleAt } from '../render/perspective.js';
+import { layerZ } from '../world/layers.js';
 import { CAR } from './carPhysics.js';
 
 // The car as drawn on screen: a code-drawn top-down sedan, its shadow, brake lights and skid marks.
@@ -80,6 +82,7 @@ export class CarView {
     makeCarTexture(scene);
     const size = (CAR.length * TEX_PPM + PAD * 2) / TEX_PPM;
     const wh = (CAR.width * TEX_PPM + PAD * 2) / TEX_PPM;
+    this.size = size; this.wh = wh;
     this.shadow = scene.add.image(0, 0, 'car_shadow').setDisplaySize(size, wh).setDepth(4);
     this.body = scene.add.image(0, 0, 'car_body').setDisplaySize(size, wh).setDepth(5);
     this.brake = scene.add.image(0, 0, 'car_brake').setDisplaySize(size, wh).setDepth(5).setVisible(false);
@@ -101,11 +104,22 @@ export class CarView {
     this.last = null;
   }
 
-  update(car) {
+  /** @param persp {cx, cy, H} the middle of the screen and camera height: a car on a bridge is above the ground and is drawn as such */
+  update(car, persp = null) {
     const c = Math.cos(car.heading), s = Math.sin(car.heading);
-    for (const img of [this.body, this.brake]) img.setPosition(car.x, car.y).setRotation(car.heading);
+    const layer = car.layer | 0, f = layer > 0 && persp ? scaleAt(persp.H, layerZ(layer)) : 1;
+    const px = f === 1 ? car.x : persp.cx + (car.x - persp.cx) * f, py = f === 1 ? car.y : persp.cy + (car.y - persp.cy) * f;
+    if (layer !== this.shownLayer || f !== this.shownScale) {
+      this.shownLayer = layer; this.shownScale = f;
+      const w = this.size * f, h = this.wh * f;
+      for (const im of [this.shadow, this.body, this.brake]) im.setDisplaySize(w, h);
+      const d = layer > 0 ? 8 + layer + 0.2 : 4;
+      this.shadow.setDepth(d); this.body.setDepth(d + 1); this.brake.setDepth(d + 1);
+      for (const im of [this.body, this.brake]) { if (layer < 0) im.setTint(0x8d9aa6).setAlpha(0.8); else im.clearTint().setAlpha(1); }
+    }
+    for (const img of [this.body, this.brake]) img.setPosition(px, py).setRotation(car.heading);
     // shadow falls toward the lower right in world space
-    this.shadow.setPosition(car.x + 0.45, car.y + 0.6).setRotation(car.heading);
+    this.shadow.setPosition(px + 0.45 * f, py + 0.6 * f).setRotation(car.heading);
     this.brake.setVisible(car.braking);
 
     // tyre marks from the rear wheels while sliding or handbraking

@@ -74,3 +74,69 @@ Real numbers (NAIP as served 2026-09-21): 61 blocks, 257 MB downloaded (245 MB o
 2,222 tiles photographed (of 2,581 non-empty tiles; the other 359 have no buildings), 206.7 MB in total, 50 to 108 KB per tile (median 96 KB), baked in 18 s
 with 7 processes. No tile lacks coverage. Downtown check against `data/roofs_naip.jpg`: position agrees to within 0.1 m (phase correlation), mean absolute
 pixel difference 2.6 to 3.7 of 255 (different resolution, 0.3 vs 0.5 m/px).
+
+## LiDAR heights, stepped blocks and roof lean (whole city)
+
+Source: USGS 3DEP point clouds of project MN_CentralMissRiver_B22 (acquired 2022, published 2023-24, public domain), the same project SwapCity used for
+downtown, so downtown numbers stay consistent. Index: the National Map Access API (`tnmaccess.nationalmap.gov`), files on `rockyweb.usgs.gov`.
+Nothing else is downloaded. The point clouds are 500 m tiles in UTM zone 15N (EPSG:26915, NAD83(2011), heights NAVD88 metres), ~100 MB each.
+
+Pipeline (each step resumable; big intermediates in `data/raw/lidar/`, gitignored):
+
+1. `npm run fetch-lidar-city` (tools/fetch_lidar_city.py; `plan` writes `data/raw/lidar/plan.json` without downloading, `run` streams, `status` reports).
+   Per file: download (2 at a time, resumable, retries) -> read every return (class 7 low noise dropped) -> 1 m DSM = density-robust maximum (the max counts only if
+   at least 35 % of the cell's returns lie within 2.5 m below it, else the surface below; the rule of SwapCity's lidar.py) and 2 m DEM = mean of class-2 ground
+   returns -> merged into 2 km block files -> the .laz is deleted. Free-disk guard: never below 8 GB. Log `data/raw/lidar/fetch.log`.
+   Block files `data/raw/lidar/blocks/{i}_{j}.dsm.npy` (float32 [2000, 2000], 1 m cells) and `.dem.npy` (float32 [1000, 1000], 2 m cells); block (i, j) =
+   UTM easting [i*2000, (i+1)*2000) x northing [j*2000, (j+1)*2000), row 0 = north edge, column 0 = west edge, heights above the NAVD88 datum (not above ground),
+   NaN = no return. `blocks/index.json` lists the files done and the blocks each touched. Shared helpers (game <-> UTM, mosaic reader): tools/lib/lidar_common.py.
+2. `npm run lidar-heights-city` (tools/lidar_heights_city.py) reads every building of `data/city/tiles/*.json` (deduplicated by id) and writes
+   - `data/heights_lidar_city.json` `{ source, buildings: { "<osm id>": { h, p50, max, n } } }`: exactly the schema and rules of `data/heights_lidar.json`
+     (h = 90th percentile of surface minus ground over the footprint cells at least 1 m inside the edge, p50 the median, max the top, n the cell count; ground = the DEM with
+     holes under buildings filled by a pyramid fill). A building with no return over its footprint gets no entry.
+   - `data/parts_lidar_city.json` `{ source, parts: { "<osm id>": [ { poly: [[x, y]...], base, top } ] } }` in the game frame, exactly like `parts_lidar.json`
+     (base + towers by roof plateaus; only where p90 - median > 12 m and n >= 150).
+   - `data/raw/lidar/heights_city_report.json`: statistics (coverage, distribution, validation against OSM tags).
+   Only buildings whose whole footprint lies inside merged files are measured, so a half-finished download never produces a wrong height.
+   The downtown script `tools/lidar_heights.py` is unchanged in behaviour (its outputs are byte-identical; the stepped-building split moved into a shared function
+   `split_stepped_poly` and the file gained a `__main__` guard so it can be imported).
+3. `node tools/bake_city.mjs` uses `data/heights_lidar_city.json` + `data/parts_lidar_city.json` when present: for every id they contain the city files win (heights and blocks); the
+   downtown files only fill ids the city files lack (or everything if the city files are absent). The bake no longer deletes `data/city/tiles/*.jpg` and `roofs.json`, only the old tile JSON.
+4. `npm run roof-lean-city` (tools/roof_lean_city.py) writes `data/roof_lean_city.json`:
+   `{ "cell": 1500, "lean": { "i_j": [ax, ay], ... }, "fallback": [ax, ay], ... }`. Cell (i, j) = (floor(x / 1500), floor(y / 1500)) in game metres. A roof of height h whose footprint
+   is at p is drawn at `p + h * (ax, ay)` in the tile photo (game metres, x right, y down; same convention as `data/roof_offsets.json`). Cells not listed use `fallback`.
+   Extra keys (`cells_info`: towers per cell and spread, `min_h`, `towers_used`) are informational. Method: for every building of 25 m or more, the LiDAR roof edges (true position, cut in the
+   game frame at 2 px/m) are cross-correlated (normalised, FFT) with the edges of the tile's NAIP photo over all shifts up to +-max(8 m, 30 % of the height); clear peaks only
+   (correlation >= 0.25 and 0.04 above the best peak more than 4 m away); lean = shift / height; per cell the median, or the median of the 3x3 neighbourhood if the cell has
+   fewer than 5 towers, else the city-wide median. Montage checks: `python3 tools/roof_lean_city.py --montage` writes crops to /tmp/sc/lean_{i}_{j}.png (yellow = footprint, red = footprint shifted by h * lean).
+
+## Water
+
+`data/city/water.json` (249 KB, whole file loaded at start) holds the water bodies of Minneapolis as polygons in the game frame (same `toGame` as everything else):
+
+    { meta: { generated, count, areaKm2, source: '(c) OpenStreetMap contributors (ODbL)', frame, minAreaM2: 300, simplifyM: 0.4 },
+      polygons: [ { id: <osm id>, name: '<name or empty>', outer: [[x, y], ...], holes: [ [[x, y], ...], ... ] } ] }
+
+Rings are metres, rounded to 0.01 m, no repeated closing point. The outer ring has POSITIVE shoelace area (sum of x1*y2 - x2*y1 over the ring, y down), every hole NEGATIVE.
+Draw a polygon as one canvas path (outer + holes) with `evenodd`; the rings are also the shore walls (cars stop at any ring edge, outer or hole; a hole is an island).
+Sorted by area, biggest first. A polygon can carry OSM's own name (56 of 262 do).
+
+Build: `npm run fetch-water` (tools/fetch_water.mjs) downloads OSM ways and multipolygon relations with natural=water, waterway=riverbank, landuse=reservoir|basin (not wetland) from
+Overpass for the city limit box + 200 m in 3 x 3 chunks (`out geom`) into `data/raw/city/water/w_{row}_{col}.json` (gitignored, 1.6 MB, resumable). `npm run bake-water`
+(tools/bake_water.mjs) joins each relation's outer/inner ways end to end into rings (ways de-duplicated by id across chunks), drops water bodies under 300 m2 (net of holes), drops
+closed ways that are also relation members or repeat a relation outline, culls bodies wholly outside the city box + 150 m, simplifies (Douglas-Peucker 0.4 m) and writes the file. Polygons that run past
+the box + 150 m (the river relations run for kilometres beyond the city) are clipped to it (Sutherland-Hodgman); the river is NOT cut at the city limit, which follows the river bank/centre line in places.
+
+Real numbers (OSM as of 2026-09-21): 9 chunks in ~5 min (overpass-api.de answered 504/429 a few times, retries worked), 310 ways + 31 relations, then 262 polygons, 12,190 outer points, 47 holes, 12.15 km2 in all
+(9.5 km2 inside the city limit of 147.9 km2). Dropped: 47 under 300 m2, 39 wholly outside the box. 7 polygons clipped to the box (two Mississippi relations: `104592` 44 islands/holes, `20617924` 27, plus five small ponds).
+Big lakes (km2): Bde Maka Ska 1.688, Lake Harriet 1.378, Lake Nokomis 0.824, Cedar Lake 0.676, Lake of the Isles 0.448 (2 islands), Lake Hiawatha 0.214, Wirth Lake 0.162, Powderhorn Lake 0.046, Loring Pond 0.028;
+Minnehaha Creek appears only where it is mapped as an area (line waterways are not fetched); Brownie Lake, Diamond Lake, Crystal Lake, Sweeney Lake, Grass Lake, Ryan Lake, Kenilworth Channel, Lake of the Isles Lagoon and Channel, Bassett Creek Lagoons are also there.
+Mississippi: the two big river polygons `104592` (downstream, south-east of the Stone Arch area) and `20617924` (upstream, north-west), plus lock, harbour and pond pieces.
+Checks: every ring closed and simple (no self-intersections), windings as above; roads against water (`node tools/check_water.mjs`, plot `python3 tools/plot_water.py` -> /tmp/sc/water.png):
+87 road pieces lie in water for 1 m or more; 86 of them are bridges (layer >= 1, bridge = true, all with layer 1 or 2, none a tunnel) and only one is a plain road: service way 759954898, 15.7 m of a
+30 m stub running into Cedar Lake (a boat launch / dock; needs a barricade or is simply a road that stops at the shore).
+
+Deviations and things the engine must know:
+- Water polygons overlap no road except bridges (and the one Cedar Lake service stub), but nothing in the bake removes a road from the water: a bridge is a road with `layer >= 1` or `bridge: true`; the engine should let a car stay on a bridge road over water and stop a car that leaves any road into water.
+- Bake-time merges are by outline only, so a big body split by OSM into several touching polygons (locks, harbour basins, the river pieces above) simply overlaps or abuts; treat the union as water.
+- Lakes' names come from OSM (`name`); rivers mapped as unnamed relations have `name: ""`.

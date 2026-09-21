@@ -8,6 +8,7 @@
     html, body { margin: 0; height: 100%; background: #111; overflow: hidden; }
     #earth { position: fixed; inset: 0; width: 100%; height: 100%; display: none; }
     #game { position: fixed; inset: 0; }
+    #earth-top { position: fixed; inset: 0; width: 100%; height: 100%; display: none; pointer-events: none; }
     #earth-attrib { position: fixed; right: 10px; bottom: 26px; display: none; align-items: center; justify-content: flex-end; gap: 8px; max-width: 42%; color: rgba(255,255,255,.9); font: 10px/1.3 Arial, sans-serif; text-shadow: 0 1px 2px #000, 0 0 3px #000; pointer-events: none; }
     #earth-attrib img { height: 18px; flex: none; }
     #tune select { width: 100%; margin-top: 3px; padding: 4px 6px; font: inherit; background: #26303a; color: #dfe4e7; border: 1px solid #45525d; border-radius: 5px; }
@@ -33,6 +34,7 @@
 <body>
   <canvas id="earth"></canvas>
   <div id="game"></div>
+  <canvas id="earth-top"></canvas>
   <div id="earth-attrib"></div>
   <pre id="hud"></pre>
   <p id="attrib">Map data &copy; OpenStreetMap contributors (ODbL)</p>

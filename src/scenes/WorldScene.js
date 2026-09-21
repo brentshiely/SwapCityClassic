@@ -75,7 +75,7 @@ export class WorldScene extends Phaser.Scene {
     if (this.pedsOn) this.peds.fill(null, this.car);
     this.blockedFn = blocked;
     // which scenery is showing: Google Earth (live, when online) or the offline look
-    this.look = new LookController({ scene: this, images: this.info.images, buildingLayer: this.buildings.g, getLook: () => this.settings.look, getStreets: () => this.settings.streets, map, urlLook: params.get('look'), setLook: (v) => this.tuning.set({ look: v }) });
+    this.look = new LookController({ scene: this, images: this.info.images, buildingLayer: this.buildings.g, getLook: () => this.settings.look, getStreets: () => this.settings.streets, getOverhead: () => this.settings.overhead, map, hideInGoogle: [this.skyways.g], urlLook: params.get('look'), setLook: (v) => this.tuning.set({ look: v }) });
     this.carView = new CarView(this, map.meta.world);
     this.trafficView = new TrafficView(this, this.traffic);
     this.pedView = new PedView(this, this.peds);

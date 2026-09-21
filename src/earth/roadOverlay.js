@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { paintRoadLayer } from '../render/ground.js';
-import { asphaltTile } from '../render/textures.js';
+import { asphaltTile, paverTile, grassTile } from '../render/textures.js';
 
-// Our streets drawn OVER Google's picture, so the cars and vans photographed on Google's roads are covered by our road
-// surface, and only our own traffic drives on it. This is an overlay on top of Google's imagery (allowed); nothing is read
+// Our ground drawn OVER Google's picture (paver sidewalks everywhere, parks and parking lots, then the road surface), so the
+// cars and vans photographed on Google's streets and kerbs are covered and only our own traffic and people are on it. Google
+// still supplies the buildings, trees and poles: anything taller than the overlay's height wins the depth test. This is an overlay on top of Google's imagery (allowed); nothing is read
 // back from Google's tiles.
 //
 // The road surface is the same description the offline look paints (paintRoadLayer in ground.js): a recording "canvas" catches
@@ -14,8 +15,13 @@ import { asphaltTile } from '../render/textures.js';
 // covered too. To keep it from sliding sideways as a result of perspective, it is scaled toward the camera by (H - lift) / H
 // every frame, which puts every point of it exactly where the same point on the ground would appear.
 
-export const OVERLAY_LIFT = 3.0;
-const TEXTURE_METRES = 256 / 12; // one asphalt tile covers the same ground as in the offline look
+export const OVERLAY_LIFT = 3.5;
+// Anything of Google's picture higher than this above the street (mast arms, signal heads, signs, wires, tree canopies, skyways,
+// building walls) is drawn a second time ABOVE the cars and people (earthLayer.js), so traffic passes under it.
+export const OVERHEAD_FROM = 3.7;
+const PPM = 12, SLAB_METRES = 2.5, MARGIN = 45; // the same as ground.js: a texture pixel is 1/12 m; the ground reaches 45 m past the playable map
+// metres covered by one repeat of each texture, as in the offline look
+const TEXTURE_METRES = { asphalt: 256 / PPM, alley: 256 / PPM, lot: 256 / PPM, paver: (Math.round(SLAB_METRES * PPM) * 2) / PPM, grass: 128 / PPM };
 
 // ---- a canvas 2D lookalike that records geometry instead of pixels ----
 class Recorder {
@@ -92,6 +98,12 @@ class Recorder {
     }
   }
 
+  /** triangles straight into a pass (the ground under the roads): tris = [[x, y], [x, y], [x, y], ...] */
+  raw(rank, pattern, points) {
+    const b = this.batch({ rank, pattern });
+    for (const p of points) b.pos.push(p[0], p[1]);
+  }
+
   fillRect(x, y, w, h) {
     const st = this.style(this.fillStyle, false), b = this.batch(st);
     const p = [this.apply(x, y), this.apply(x + w, y), this.apply(x + w, y + h), this.apply(x, y + h)];
@@ -131,6 +143,14 @@ function dashed(pts, pattern) {
 /** Build the overlay for the game's map. Returns { group, update(camX, camY, H) }. */
 export function buildRoadOverlay(map) {
   const rec = new Recorder();
+  // the ground under the roads: paver sidewalk everywhere, then parks and parking lots
+  const w = map.meta.world, x0 = w.minX - MARGIN, y0 = w.minY - MARGIN, x1 = w.maxX + MARGIN, y1 = w.maxY + MARGIN;
+  rec.raw(0, 'paver', [[x0, y0], [x1, y0], [x1, y1], [x0, y0], [x1, y1], [x0, y1]]);
+  for (const a of map.areas) {
+    const contour = a.points.map(([x, y]) => new THREE.Vector2(x, y));
+    const tris = THREE.ShapeUtils.triangulateShape(contour, []);
+    rec.raw(0.5, a.kind === 'parking' ? 'lot' : 'grass', tris.flat().map((i) => a.points[i]));
+  }
   paintRoadLayer(rec, map, { asphalt: 'asphalt', alley: 'alley' });
 
   const tex = (seed, base) => {
@@ -138,14 +158,15 @@ export function buildRoadOverlay(map) {
     t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
     return t;
   };
-  const textures = { asphalt: tex(11), alley: tex(37, [64, 76, 78]) };
+  const canvasTex = (c) => { const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; };
+  const textures = { asphalt: tex(11), alley: tex(37, [64, 76, 78]), lot: tex(23, [58, 66, 70]), paver: canvasTex(paverTile(Math.round(SLAB_METRES * PPM))), grass: canvasTex(grassTile()) };
 
   const group = new THREE.Group();
   for (const b of [...rec.batches.values()].sort((p, q) => p.rank - q.rank)) {
     const n = b.pos.length / 2, position = new Float32Array(n * 3), uv = b.pattern ? new Float32Array(n * 2) : null;
     for (let i = 0; i < n; i++) {
       position[i * 3] = b.pos[i * 2]; position[i * 3 + 1] = 0; position[i * 3 + 2] = b.pos[i * 2 + 1]; // game (x, y) -> scene (x, 0, z)
-      if (uv) { uv[i * 2] = b.pos[i * 2] / TEXTURE_METRES; uv[i * 2 + 1] = b.pos[i * 2 + 1] / TEXTURE_METRES; }
+      if (uv) { const m = TEXTURE_METRES[b.pattern]; uv[i * 2] = b.pos[i * 2] / m; uv[i * 2 + 1] = b.pos[i * 2 + 1] / m; }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(position, 3));

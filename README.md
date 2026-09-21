@@ -53,6 +53,14 @@ tower walls still hide it. It floats 3 m up (above a car roof) and is scaled tow
 would. The T panel choice `Our streets over Google` switches it off; `?roadlift=` changes the height for experiments.
 It only draws over Google's imagery and reads nothing back from it.
 
+The overlay now also lays our paver sidewalks, parks and parking lots under the roads, so only Google's buildings, trees,
+poles and wires remain of its ground level. Whatever of Google's picture is higher than `OVERHEAD_FROM` (3.7 m, in
+`roadOverlay.js`) is drawn a second time ABOVE the game: `earthLayer.js` renders the tiles with a clipping plane into a
+transparent frame and copies it to `#earth-top`, a canvas above the game canvas. So mast arms, signal heads, signs, wires,
+tree canopies, Google's real skyways and building walls pass over cars and people, and traffic drives under them. Google's
+picture is used as it is (nothing painted or read back). The flat ground assumption (ground at one height) is what the plane
+relies on; the T panel switch `Google overhead above cars` turns the second pass off (then our skyway blocks show again).
+
 ## Skyways
 
 OSM has the Minneapolis Skyway (bridge=covered ways). `tools/bake_map.mjs` keeps the stretches over open ground into

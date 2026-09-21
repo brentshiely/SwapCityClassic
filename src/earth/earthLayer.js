@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { TilesRenderer } from '3d-tiles-renderer/three';
-import { buildRoadOverlay } from './roadOverlay.js';
+import { buildRoadOverlay, OVERHEAD_FROM } from './roadOverlay.js';
 import { GoogleCloudAuthPlugin, GLTFExtensionsPlugin } from '3d-tiles-renderer/plugins';
 
 // Google Earth mode: Google's Photorealistic 3D Tiles drawn LIVE under the game, from a camera straight above the car.
@@ -44,16 +44,20 @@ function ecefToScene({ origin, rotationDegrees, boxCentreLocal, groundEllipsoidH
 export class EarthLayer {
   /**
    * @param canvas the <canvas> this draws into (sits under the game's canvas)
+   * @param topCanvas a 2D <canvas> above the game's canvas: it gets a copy of only the overhead parts of the picture
    * @param apiKey Google Maps Platform key with the Map Tiles API enabled
    * @param align the contents of data/earth_align.json
    * @param map the game's map (its streets are drawn over Google's picture)
    * @param onState (state, detail) => void   state: 'loading' | 'ready' | 'failed'
    */
-  constructor({ canvas, apiKey, align, map, onState }) {
+  constructor({ canvas, topCanvas, apiKey, align, map, onState }) {
     this.onState = onState;
     this.state = 'loading';
     this.canvas = canvas;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
+    this.topCanvas = topCanvas;
+    this.topCtx = topCanvas.getContext('2d');
+    this.overheadPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -OVERHEAD_FROM); // keeps everything higher than OVERHEAD_FROM
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(1);
     this.renderer.setClearColor(0x14181a, 1);
     this.scene = new THREE.Scene();
@@ -76,6 +80,7 @@ export class EarthLayer {
     if (lift > 0) this.overlay.setLift(lift);
     this.scene.add(this.overlay.group);
 
+    this.overhead = true;
     this.errors = 0;
     tiles.addEventListener('load-error', (e) => {
       this.errors++;
@@ -95,11 +100,14 @@ export class EarthLayer {
   }
 
   setStreetsOver(on) { this.overlay.group.visible = on; }
+  /** draw the overhead parts of the picture above the cars (on), or leave everything under them (off) */
+  setOverhead(on) { this.overhead = on; if (!on) this.topCtx.clearRect(0, 0, this.w ?? 0, this.h ?? 0); }
 
   resize(w, h) {
     if (this.w === w && this.h === h) return;
     this.w = w; this.h = h;
     this.renderer.setSize(w, h, false);
+    this.topCanvas.width = w; this.topCanvas.height = h;
     this.camera.aspect = w / h;
   }
 
@@ -120,7 +128,21 @@ export class EarthLayer {
     this.overlay.update(camX, camY, H);
     this.tiles.setResolutionFromRenderer(cam, this.renderer);
     this.tiles.update();
-    this.renderer.render(this.scene, cam);
+    const r = this.renderer, overlayShown = this.overlay.group.visible;
+    if (this.overhead) {
+      // pass 1: only what is higher than a truck, on a see-through background, copied to the canvas above the game
+      this.overlay.group.visible = false;
+      r.clippingPlanes = [this.overheadPlane];
+      r.setClearColor(0x000000, 0);
+      r.render(this.scene, cam);
+      this.topCtx.clearRect(0, 0, w, h);
+      this.topCtx.drawImage(r.domElement, 0, 0, w, h);
+      r.clippingPlanes = [];
+      r.setClearColor(0x14181a, 1);
+      this.overlay.group.visible = overlayShown;
+    }
+    // pass 2: the whole picture with our ground over it, under the game
+    r.render(this.scene, cam);
     if (this.state === 'loading' && this.tiles.visibleTiles.size > 0) {
       this.state = 'ready';
       clearTimeout(this.timeout);

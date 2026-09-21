@@ -27,14 +27,17 @@ export class LookController {
    * @param images the ground images (hidden while Google shows)
    * @param buildingLayer the buildings' Graphics object (hidden while Google shows)
    * @param getLook () => 'auto' | 'google' | 'offline' (the saved setting)
+   * @param getOverhead () => 'on' | 'off': Google's overhead parts drawn above the cars
    * @param getStreets () => 'on' | 'off': our streets over Google's picture
    * @param map the game map
+   * @param hideInGoogle extra Graphics layers hidden while Google shows
    * @param urlLook 'auto' | 'google' | 'offline' | null (the address bar wins)
    * @param setLook (value) => void, used by the G key
    */
-  constructor({ scene, images, buildingLayer, getLook, getStreets, map, urlLook, setLook }) {
-    Object.assign(this, { scene, images, buildingLayer, getLook, getStreets, map, urlLook, setLook });
+  constructor({ scene, images, buildingLayer, getLook, getStreets, getOverhead, map, hideInGoogle = [], urlLook, setLook }) {
+    Object.assign(this, { scene, images, buildingLayer, getLook, getStreets, getOverhead, map, hideInGoogle, urlLook, setLook });
     this.canvas = document.getElementById('earth');
+    this.topCanvas = document.getElementById('earth-top');
     this.attrib = document.getElementById('earth-attrib');
     this.lastSetting = getLook(); // when the setting changes (T panel or the G key), that beats the address bar
     this.earth = null; this.loading = false; this.failed = ''; this.failedAt = 0; this.retries = 0; this.shown = false; this.reason = ''; this.frame = 0;
@@ -78,7 +81,7 @@ export class LookController {
     this.loading = true;
     countSession();
     import('./earthLayer.js').then(({ EarthLayer }) => {
-      this.earth = new EarthLayer({ canvas: this.canvas, apiKey: KEY, align, map: this.map, onState: (state, detail) => { if (state === 'failed') this.fail(detail); } });
+      this.earth = new EarthLayer({ canvas: this.canvas, topCanvas: this.topCanvas, apiKey: KEY, align, map: this.map, onState: (state, detail) => { if (state === 'failed') this.fail(detail); } });
     }).catch((err) => this.fail(err?.message ?? 'could not start'));
   }
 
@@ -95,10 +98,13 @@ export class LookController {
   update(camX, camY, H, zoom, w, h) {
     const want = this.wanted();
     if (want) this.start();
-    if (want && this.earth) this.earth.setStreetsOver(this.getStreets() !== 'off');
+    const overhead = this.getOverhead() !== 'off';
+    if (want && this.earth) { this.earth.setStreetsOver(this.getStreets() !== 'off'); this.earth.setOverhead(overhead); }
     if (want && this.earth) this.earth.update(camX, camY, H, zoom, w, h);
     const show = !!(want && this.earth && this.earth.state === 'ready');
     if (show !== this.shown) this.setShown(show);
+    // in Google's picture the real skyway is drawn above the cars, so our own skyway blocks step aside (unless overhead is off)
+    for (const l of this.hideInGoogle) l.setVisible(!(show && overhead));
     if (show && ++this.frame % 30 === 0) this.refreshAttribution();
   }
 
@@ -107,6 +113,7 @@ export class LookController {
     for (const im of this.images) im.setVisible(!show);
     this.buildingLayer.setVisible(!show);
     this.canvas.style.display = show ? 'block' : 'none';
+    this.topCanvas.style.display = show ? 'block' : 'none';
     this.attrib.style.display = show ? 'flex' : 'none';
     this.scene.cameras.main.setBackgroundColor(show ? 'rgba(0,0,0,0)' : 0x14181a); // see the Google canvas through the game's
     if (show) this.refreshAttribution();

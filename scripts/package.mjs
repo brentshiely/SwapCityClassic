@@ -21,7 +21,8 @@ writeFileSync('release/HOW TO PLAY.txt', `SwapCityClassic - how to play (works w
    Scenery choice in the T panel: Auto / Google Earth / Offline. Every launch that uses Google is one billed session, so:
    keep ONE tab open, and Auto stops using Google after 40 launches in a day (it then plays offline).
    Our own streets are drawn over Google's picture (T panel: "Our streets over Google") so real parked and moving
-   cars in the photos are covered. Google's imagery is streamed live and never saved. ?look=offline forces the offline look.
+   cars in the photos are covered. Things high above the street in Google's picture (signal arms, wires, signs, tree tops, skyways) are drawn over
+   the cars, so you drive under them (T panel: "Google overhead above cars"). Google's imagery is streamed live and never saved. ?look=offline forces the offline look.
 4. Optional address-bar extras, added after the file name:
    ?cars=30   more traffic        ?peds=150  a bigger crowd
    ?notraffic no traffic          ?nopeds    no people

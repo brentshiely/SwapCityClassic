@@ -20,8 +20,10 @@ check('no CSS @import or url() points at the internet', cssUrls.length === 0, `$
 const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
 const netCalls = walk('src').filter((f) => f.endsWith('.js')).flatMap((f) => [...readFileSync(f, 'utf8').matchAll(/\b(fetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|EventSource|importScripts)/g)].map((m) => `${f}: ${m[0]}`));
 check('the game\'s own code makes no network calls (fetch, XHR, WebSocket, ...)', netCalls.length === 0, netCalls.join('; ') || 'none');
-const googleHosts = [...html.matchAll(/[a-z0-9.-]*(?:google\.com|googleapis\.com|gstatic\.com|googleusercontent\.com)/gi)];
-check('the game contains no Google addresses at all (so any seen at run time are Chrome\'s own)', googleHosts.length === 0, `${googleHosts.length} found`);
+const GOOGLE_EARTH_HOSTS = ['tile.googleapis.com', 'www.gstatic.com']; // what Google Earth mode needs: tiles, the logo, the Draco decoder
+const googleHosts = [...new Set([...html.matchAll(/https?:\/\/([a-z0-9.-]*(?:google\.com|googleapis\.com|gstatic\.com|googleusercontent\.com))/gi)].map((m) => m[1].toLowerCase()))];
+const stray = googleHosts.filter((h) => !GOOGLE_EARTH_HOSTS.includes(h));
+check('the only Google addresses in the game are the ones Google Earth mode uses', stray.length === 0, `${googleHosts.join(', ') || 'none'}${stray.length ? '; UNEXPECTED: ' + stray.join(', ') : ''}`);
 const kb = Math.round(statSync('dist/index.html').size / 1024);
 check('the build is a single file', true, `${kb} KB`);
 
@@ -43,16 +45,31 @@ const requestsOf = (out) => [...out.matchAll(/NotifyBeforeURLRequest: (https?:\/
 writeFileSync('/tmp/offline_blank.html', '<!doctype html><title>blank</title><p>blank</p>');
 const blank = run('file:///tmp/offline_blank.html', 3000);
 const chromeOwn = hostsOf((blank.stdout ?? '') + (blank.stderr ?? ''));
-const CHROME_SERVICES = /^https?:\/\/[^/]*(?:google\.com|googleapis\.com|gstatic\.com)(?:[:/]|$)/i; // Chrome's own background services
-const pageRequests = (out) => requestsOf(out).filter((u) => !CHROME_SERVICES.test(u) && ![...chromeOwn].some((h) => u.startsWith(h)));
+// Chrome's own background services talk to Google (updates, sign-in checks). Those are ignored EXCEPT the addresses that only the
+// game's Google Earth mode uses, which always count.
+const CHROME_SERVICES = /^https?:\/\/[^/]*(?:google\.com|googleapis\.com|gstatic\.com)(?:[:/]|$)/i;
+const GAME_GOOGLE = /^https:\/\/(?:tile\.googleapis\.com\/|www\.gstatic\.com\/(?:draco|images\/branding))/i;
+const pageRequests = (out) => requestsOf(out).filter((u) => GAME_GOOGLE.test(u) || (!CHROME_SERVICES.test(u) && ![...chromeOwn].some((h) => u.startsWith(h))));
 
-const game = run(`file://${process.cwd()}/dist/index.html`);
+// (a) the offline look, forced: the strictest test, the file must not ask the network for anything at all
+const game = run(`file://${process.cwd()}/dist/index.html?look=offline`);
 const gameOut = (game.stdout ?? '') + (game.stderr ?? '');
-check('the game starts with the network blocked (ground painted)', /ground painted/.test(gameOut), (gameOut.match(/ground painted[^"]*/) ?? ['no start message'])[0]);
+check('offline look: the game starts with the network blocked (ground painted)', /ground painted/.test(gameOut), (gameOut.match(/ground painted[^"]*/) ?? ['no start message'])[0]);
 const asked = pageRequests(gameOut);
-check('it asks the network for nothing at all (no http/https request of its own)', asked.length === 0, `${asked.length} requests${asked.length ? ': ' + asked.slice(0, 3).join(', ') : ''}; Chrome's own background hosts ignored: ${chromeOwn.size}`);
+check('offline look: it asks the network for nothing at all (no http/https request of its own)', asked.length === 0, `${asked.length} requests${asked.length ? ': ' + asked.slice(0, 3).join(', ') : ''}; Chrome's own background hosts ignored: ${chromeOwn.size}`);
 const shot = existsSync('/tmp/offline_check.png') ? statSync('/tmp/offline_check.png').size : 0;
-check('it draws a real picture (screenshot over 100 KB)', shot > 100000, `${Math.round(shot / 1024)} KB`);
+check('offline look: it draws a real picture (screenshot over 100 KB)', shot > 100000, `${Math.round(shot / 1024)} KB`);
+
+// (b) Auto mode with the network blocked (the browser still says "online" but nothing gets through): Google is tried, fails,
+// and the game must carry on with the offline look. Its only requests are Google Earth mode's own.
+const auto = run(`file://${process.cwd()}/dist/index.html`, 9000);
+const autoOut = (auto.stdout ?? '') + (auto.stderr ?? '');
+const autoAsked = pageRequests(autoOut);
+check('auto mode, network blocked: the game still starts', /ground painted/.test(autoOut), '');
+check('auto mode, network blocked: it only ever tries Google Earth\'s own addresses, then gives up', autoAsked.every((u) => GAME_GOOGLE.test(u)), `${autoAsked.length} attempts: ${[...new Set(autoAsked.map((u) => u.replace(/\?.*/, '')))].slice(0, 3).join(', ') || 'none'}`);
+check('auto mode, network blocked: it falls back to the offline look on its own', /Google Earth mode unavailable|look: offline/.test(autoOut) || autoAsked.length === 0, (autoOut.match(/Google Earth mode unavailable[^"]*/) ?? ['(no key in this build, or no attempt made)'])[0].slice(0, 90));
+const autoShot = existsSync('/tmp/offline_check.png') ? statSync('/tmp/offline_check.png').size : 0;
+check('auto mode, network blocked: it still draws a real picture', autoShot > 100000, `${Math.round(autoShot / 1024)} KB`);
 
 // ---- 3. control: a page that does reach for the internet must be caught
 writeFileSync('/tmp/offline_control.html', '<!doctype html><img src="https://example.com/x.png"><script>fetch("https://example.com/y").catch(()=>{})</script>');

@@ -2,12 +2,16 @@
 // changes them live and remembers them in this browser (localStorage), so tuning also works on the plane.
 
 export const DEFAULTS = {
+  look: 'auto',
   zoomNear: 20, zoomFar: 12, lookahead: 0.45,
   vMax: 20, accel: 7.5, grip: 9, handbrakeGrip: 1.3, turnMax: 2.6,
   camHeight: 300, cars: 16, peds: 80,
 };
 
 export const SPEC = [
+  { group: 'Look', items: [
+    { key: 'look', type: 'choice', label: 'Scenery', options: [['auto', 'Auto: Google Earth when online'], ['google', 'Google Earth (live)'], ['offline', 'Offline (LiDAR heights)']], hint: 'G flips it. Google streams live, needs internet.' },
+  ] },
   { group: 'Camera', items: [
     { key: 'zoomNear', label: 'Zoom when slow', unit: 'px/m', min: 8, max: 70, step: 1, hint: 'higher = closer' },
     { key: 'zoomFar', label: 'Zoom at top speed', unit: 'px/m', min: 5, max: 50, step: 1, hint: 'lower = sees further ahead' },
@@ -37,6 +41,7 @@ const KEY = 'swapcityclassic.settings.v1';
 const clean = (o) => {
   const out = {};
   for (const g of SPEC) for (const it of g.items) {
+    if (it.type === 'choice') { out[it.key] = it.options.some(([v]) => v === o?.[it.key]) ? o[it.key] : DEFAULTS[it.key]; continue; }
     const v = Number(o?.[it.key]);
     out[it.key] = Number.isFinite(v) ? Math.min(it.max, Math.max(it.min, v)) : DEFAULTS[it.key];
   }

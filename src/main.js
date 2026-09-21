@@ -19,16 +19,26 @@ addEventListener('unhandledrejection', graphicsHelp);
 // index.html?debug opens the map-data debug view instead of the game world.
 const debug = new URLSearchParams(location.search).has('debug');
 
+// A hidden or minimised window can report a size of 0 x 0, and a zero-sized canvas makes the graphics setup fail. Wait until the
+// window has a real size, then start.
+function whenSized(go) {
+  if (innerWidth > 0 && innerHeight > 0) { go(); return; }
+  const onSize = () => { if (innerWidth > 0 && innerHeight > 0) { removeEventListener('resize', onSize); go(); } };
+  addEventListener('resize', onSize);
+}
+
 // Exposed so the game can be inspected and driven from the browser console while testing.
-window.__game = new Phaser.Game({
-  type: Phaser.AUTO,
-  parent: 'game',
-  backgroundColor: '#14181a',
-  render: { mipmapFilter: 'LINEAR_MIPMAP_LINEAR' },
-  scale: {
-    mode: Phaser.Scale.RESIZE,
-    width: '100%',
-    height: '100%',
-  },
-  scene: [debug ? MapDebugScene : WorldScene],
+whenSized(() => {
+  window.__game = new Phaser.Game({
+    type: Phaser.AUTO,
+    parent: 'game',
+    transparent: true, // the Google Earth canvas shows through when that look is on
+    render: { mipmapFilter: 'LINEAR_MIPMAP_LINEAR' },
+    scale: {
+      mode: Phaser.Scale.RESIZE,
+      width: '100%',
+      height: '100%',
+    },
+    scene: [debug ? MapDebugScene : WorldScene],
+  });
 });

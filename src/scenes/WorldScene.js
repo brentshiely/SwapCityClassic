@@ -6,6 +6,7 @@ import { cameraHeight } from '../render/perspective.js';
 import { loadSettings, saveSettings } from '../settings.js';
 import { TuningPanel } from '../ui/tuningPanel.js';
 import { NavHud } from '../ui/navHud.js';
+import { LookController } from '../earth/lookController.js';
 import { attachFreeCamera, startFromHash } from '../camera/freeCamera.js';
 import { Car, CAR, PHYSICS_STEP } from '../vehicles/carPhysics.js';
 import { CollisionWorld } from '../world/collision.js';
@@ -71,6 +72,8 @@ export class WorldScene extends Phaser.Scene {
     this.traffic.peds = this.pedsOn ? this.peds.peds : null;
     if (this.pedsOn) this.peds.fill(null, this.car);
     this.blockedFn = blocked;
+    // which scenery is showing: Google Earth (live, when online) or the offline look
+    this.look = new LookController({ scene: this, images: this.info.images, buildingLayer: this.buildings.g, getLook: () => this.settings.look, urlLook: params.get('look'), setLook: (v) => this.tuning.set({ look: v }) });
     this.carView = new CarView(this, map.meta.world);
     this.trafficView = new TrafficView(this, this.traffic);
     this.pedView = new PedView(this, this.peds);
@@ -131,7 +134,9 @@ export class WorldScene extends Phaser.Scene {
     const zoomTarget = Phaser.Math.Linear(this.settings.zoomNear, this.settings.zoomFar, Math.min(1, car.speed / CAR.vMax));
     this.camZoom += (zoomTarget - this.camZoom) * (1 - Math.exp(-2.5 * dt));
     this.applyCamera();
-    this.buildings.update(this.camX, this.camY, this.camZoom, cam.width, cam.height, cameraHeight(this.settings.camHeight, this.settings.zoomNear, this.camZoom));
+    const H = cameraHeight(this.settings.camHeight, this.settings.zoomNear, this.camZoom);
+    this.buildings.update(this.camX, this.camY, this.camZoom, cam.width, cam.height, H);
+    this.look.update(this.camX, this.camY, H, this.camZoom, cam.width, cam.height);
 
     // traffic: cars spawn only outside what the player can see
     const view = { cx: this.camX, cy: this.camY, hw: cam.width / (2 * this.camZoom), hh: cam.height / (2 * this.camZoom) };
@@ -144,7 +149,7 @@ export class WorldScene extends Phaser.Scene {
     this.pedView.update();
 
     this.navHud.update({ x: car.x, y: car.y, vx: car.vx, vy: car.vy, heading: car.heading });
-    this.hudText(`${Math.round(car.speed * 3.6)} km/h  |  ${this.traffic.cars.length} cars, ${this.peds.peds.length} people`, '↑/W gas   ↓/S brake + reverse   ←→/AD steer   Space handbrake   R restart   T settings');
+    this.hudText(`${Math.round(car.speed * 3.6)} km/h  |  ${this.traffic.cars.length} cars, ${this.peds.peds.length} people  |  ${this.look.label}`, '↑/W gas   ↓/S brake + reverse   ←→/AD steer   Space handbrake   R restart   T settings   G scenery');
   }
 
   hudText(left, controls) {

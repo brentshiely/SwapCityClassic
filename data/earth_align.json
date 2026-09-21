@@ -1,0 +1,13 @@
+{
+  "origin": {
+    "lat": 44.9757,
+    "lon": -93.2715
+  },
+  "rotationDegrees": 30,
+  "boxCentreLocal": {
+    "x": -63.5,
+    "y": 17.5
+  },
+  "groundEllipsoidHeightM": 231.36,
+  "note": "LiDAR datum 229.48 m + geoid -28.2 m + DEM at the origin 29.88 m + trim 19.1 cm"
+}

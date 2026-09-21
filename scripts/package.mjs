@@ -16,7 +16,12 @@ writeFileSync('release/HOW TO PLAY.txt', `SwapCityClassic - how to play (works w
    T opens the SETTINGS panel: sliders for camera zoom, top speed, grip, traffic and crowd size.
    Changes are instant and remembered in that browser. "Reset all" restores the defaults.
    Two-finger scroll / pinch only matter in the "?free" camera mode.
-3. Optional address-bar extras, added after the file name:
+3. Scenery: when the computer is ONLINE the game shows live Google Earth imagery under the cars (Google logo and
+   credits bottom-right). OFFLINE it shows its own drawn city instead, automatically. G switches by hand, or use the
+   Scenery choice in the T panel: Auto / Google Earth / Offline. Every launch that uses Google is one billed session, so:
+   keep ONE tab open, and Auto stops using Google after 40 launches in a day (it then plays offline).
+   Google's imagery is streamed live and never saved. ?look=offline forces the offline look.
+4. Optional address-bar extras, added after the file name:
    ?cars=30   more traffic        ?peds=150  a bigger crowd
    ?notraffic no traffic          ?nopeds    no people
    ?free      free-look camera    ?debug     map data view

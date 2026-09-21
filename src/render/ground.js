@@ -261,6 +261,7 @@ export function buildGround(scene, map) {
   const probe = document.createElement('canvas').getContext('2d');
   const pat = makePatterns(probe);
   const size = CHUNK / PPM, pad = 1 / PPM; // a hair of overlap hides seams between chunks
+  const images = [];
 
   for (let j = 0; j < rows; j++) {
     for (let i = 0; i < cols; i++) {
@@ -270,8 +271,8 @@ export function buildGround(scene, map) {
       paintChunk(c.getContext('2d'), map, pat, originX, originY, edge);
       const key = `ground_${i}_${j}`;
       scene.textures.addCanvas(key, c);
-      scene.add.image(originX - pad, originY - pad, key).setOrigin(0, 0).setDisplaySize(size + pad * 2, size + pad * 2).setDepth(0);
+      images.push(scene.add.image(originX - pad, originY - pad, key).setOrigin(0, 0).setDisplaySize(size + pad * 2, size + pad * 2).setDepth(0));
     }
   }
-  return { barriers: edge.barriers.length, chunks: cols * rows, ms: Math.round(performance.now() - t0), pixels: cols * rows * CHUNK * CHUNK };
+  return { images, barriers: edge.barriers.length, chunks: cols * rows, ms: Math.round(performance.now() - t0), pixels: cols * rows * CHUNK * CHUNK };
 }

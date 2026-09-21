@@ -37,7 +37,20 @@ export class TuningPanel {
     return d;
   }
 
+  choiceRow(it) {
+    const d = document.createElement('label'); d.className = 'row';
+    const name = document.createElement('span'); name.textContent = it.label;
+    const sel = document.createElement('select'); sel.id = `tune-${it.key}`;
+    for (const [v, text] of it.options) { const o = document.createElement('option'); o.value = v; o.textContent = text; sel.appendChild(o); }
+    sel.onchange = () => { this.settings[it.key] = sel.value; this.changed(); sel.blur(); };
+    const hint = document.createElement('small'); hint.textContent = it.hint;
+    d.append(name, sel, hint);
+    this.rows[it.key] = { input: sel, val: null, it };
+    return d;
+  }
+
   row(it) {
+    if (it.type === 'choice') return this.choiceRow(it);
     const d = document.createElement('label'); d.className = 'row';
     const top = document.createElement('span'); top.className = 'top';
     const name = document.createElement('span'); name.textContent = it.label;
@@ -59,6 +72,7 @@ export class TuningPanel {
   refresh() {
     for (const { input, val, it } of Object.values(this.rows)) {
       input.value = this.settings[it.key];
+      if (!val) continue;
       const dp = it.step < 0.01 ? 4 : it.step < 1 ? 2 : 0;
       val.textContent = `${Number(this.settings[it.key]).toFixed(dp)} ${it.unit}`.trim();
     }

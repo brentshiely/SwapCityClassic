@@ -35,6 +35,17 @@ true north is 30 degrees anticlockwise from straight up; the rose shows that.
 `python3 tools/lidar_heights.py --lidar <folder with dsm.npy, dem.npy, meta.json>` measures real building heights from
 USGS LiDAR into `data/heights_lidar.json` (numpy needed; the bake uses that file when present).
 
+## Google Earth mode
+
+Online, the ground under the cars can be live Google Photorealistic 3D Tiles (`src/earth/`); offline it falls back to
+the drawn OpenStreetMap + LiDAR city. Put a Map Tiles API key in `secrets/google_maps_key.txt` (gitignored) before
+`npm run build`; with no key the game is offline-only. The `Scenery` choice in the T panel (Auto / Google Earth /
+Offline), the G key and `?look=auto|google|offline` pick the look (G and the panel beat the address bar). Each launch
+that uses Google is one billed session, so Auto stops using Google after 40 launches a day in that browser
+(`LIMIT_PER_DAY` in `src/earth/lookController.js`); keep one tab open. Tiles are never cached or mined (Google's
+policy) and the Google logo and attribution always show. `tools/earth_align.py` produced `data/earth_align.json`, the
+game-frame-to-Earth alignment (ground height, no Google data).
+
 ## Adding a setting to the T panel
 
 The panel is built from a list, so a new slider is one entry:

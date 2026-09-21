@@ -41,7 +41,7 @@ Online, the ground under the cars can be live Google Photorealistic 3D Tiles (`s
 the drawn OpenStreetMap + LiDAR city. Put a Map Tiles API key in `secrets/google_maps_key.txt` (gitignored) before
 `npm run build`; with no key the game is offline-only. The `Scenery` choice in the T panel (Auto / Google Earth /
 Offline), the G key and `?look=auto|google|offline` pick the look (G and the panel beat the address bar). Each launch
-that uses Google is one billed session, so Auto stops using Google after 40 launches a day in that browser
+that uses Google is one billed session, so no mode (Auto, G, `?look=google`, a retry) opens more than 40 a day in that browser (a session left running past 170 minutes counts again, since its token is renewed)
 (`LIMIT_PER_DAY` in `src/earth/lookController.js`); keep one tab open. Tiles are never cached or mined (Google's
 policy) and the Google logo and attribution always show. `tools/earth_align.py` produced `data/earth_align.json`, the
 game-frame-to-Earth alignment (ground height, no Google data).

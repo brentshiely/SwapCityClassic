@@ -19,7 +19,8 @@ writeFileSync('release/HOW TO PLAY.txt', `SwapCityClassic - how to play (works w
 3. Scenery: when the computer is ONLINE the game shows live Google Earth imagery under the cars (Google logo and
    credits bottom-right). OFFLINE it shows its own drawn city instead, automatically. G switches by hand, or use the
    Scenery choice in the T panel: Auto / Google Earth / Offline. Every launch that uses Google is one billed session, so:
-   keep ONE tab open, and Auto stops using Google after 40 launches in a day (it then plays offline).
+   keep ONE tab open. No more than 40 Google launches a day are allowed in one browser (the HUD shows the count);
+   after that it plays offline until tomorrow.
    Our own streets are drawn over Google's picture (T panel: "Our streets over Google") so real parked and moving
    cars in the photos are covered. Things high above the street in Google's picture (signal arms, wires, signs, tree tops, skyways) are drawn over
    the cars, so you drive under them (T panel: "Google overhead above cars"). Google's imagery is streamed live and never saved. ?look=offline forces the offline look.

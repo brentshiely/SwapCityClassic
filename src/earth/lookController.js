@@ -4,12 +4,15 @@ import align from '../../data/earth_align.json';
 // streets and LiDAR-height buildings). Auto uses Google whenever the internet is up. Anything going wrong drops back to the
 // offline look. The offline look is never removed, only hidden, so the fall back is instant.
 //
-// Cost guard: Google bills per SESSION (one root request covers at least 3 hours of tiles), not per tile or per area. Auto
-// mode stops opening new sessions after LIMIT_PER_DAY launches in a day so reload loops cannot eat the free allowance.
+// Cost guard: Google bills per SESSION (one root request covers at least 3 hours of tiles), not per tile or per area. No mode
+// (Auto, the G key, ?look=google, a retry) opens more than LIMIT_PER_DAY sessions in a day in this browser, so reload loops
+// cannot eat the allowance; a session that runs past SESSION_MINUTES is counted again because the token is renewed then.
+// This matches the 40/day quota set on the key in Google Cloud, which is the real limit.
 // Switching looks with G does not open a new session: the Google layer is kept and only paused.
 
 const KEY = typeof __GOOGLE_KEY__ === 'string' ? __GOOGLE_KEY__ : '';
 const LIMIT_PER_DAY = 40;
+const SESSION_MINUTES = 170; // Google's session token lasts at least 3 hours; the layer renews it, which is a new billed session
 const RETRY_MS = 45000; // after a failed launch, try again this often while the internet looks up...
 const MAX_RETRIES = 6; // ...this many times (the internet coming back, the 'online' event, starts the count again)
 const COUNT_KEY = 'swapcityclassic.google.sessions.v1';
@@ -63,22 +66,24 @@ export class LookController {
     if (this.failed) {
       // a failed launch is not forever: flight wifi comes and goes. Try again later (Auto and Google, never when Offline is chosen).
       const retry = this.preference() !== 'offline' && navigator.onLine && this.retries < MAX_RETRIES && performance.now() - this.failedAt >= RETRY_MS
-        && (this.preference() === 'google' || sessionsToday() < LIMIT_PER_DAY);
+        && sessionsToday() < LIMIT_PER_DAY;
       if (!retry) { this.reason = this.failed; return false; }
       this.retries++; this.failed = ''; this.loading = false;
     }
     const p = this.preference();
     if (p === 'offline') { this.reason = ''; return false; }
+    if (!this.earth && sessionsToday() >= LIMIT_PER_DAY) { this.reason = `${LIMIT_PER_DAY} Google launches today`; return false; }
     if (p === 'google') { this.reason = ''; return true; }
     if (!navigator.onLine) { this.reason = 'no internet'; return false; }
-    if (!this.earth && sessionsToday() >= LIMIT_PER_DAY) { this.reason = `${LIMIT_PER_DAY} Google launches today`; return false; }
     this.reason = '';
     return true;
   }
 
   start() {
     if (this.earth || this.loading) return;
+    if (sessionsToday() >= LIMIT_PER_DAY) return; // the last line of defence: nothing opens a 41st session
     this.loading = true;
+    this.startedAt = performance.now();
     countSession();
     import('./earthLayer.js').then(({ EarthLayer }) => {
       this.earth = new EarthLayer({ canvas: this.canvas, topCanvas: this.topCanvas, apiKey: KEY, align, map: this.map, onState: (state, detail) => { if (state === 'failed') this.fail(detail); } });
@@ -98,6 +103,7 @@ export class LookController {
   update(camX, camY, H, zoom, w, h) {
     const want = this.wanted();
     if (want) this.start();
+    if (this.earth && performance.now() - this.startedAt > SESSION_MINUTES * 60000) { this.startedAt = performance.now(); countSession(); } // token renewal
     const overhead = this.getOverhead() !== 'off';
     if (want && this.earth) { this.earth.setStreetsOver(this.getStreets() !== 'off'); this.earth.setOverhead(overhead); }
     if (want && this.earth) this.earth.update(camX, camY, H, zoom, w, h);
@@ -133,7 +139,7 @@ export class LookController {
   }
 
   get label() {
-    if (this.shown) return 'look: Google Earth';
+    if (this.shown) return `look: Google Earth (${sessionsToday()}/${LIMIT_PER_DAY} today)`;
     return this.reason ? `look: offline (${this.reason})` : this.loading && !this.failed && this.preference() !== 'offline' ? 'look: offline (loading Google Earth...)' : 'look: offline';
   }
 }

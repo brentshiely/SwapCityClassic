@@ -140,3 +140,27 @@ Deviations and things the engine must know:
 - Water polygons overlap no road except bridges (and the one Cedar Lake service stub), but nothing in the bake removes a road from the water: a bridge is a road with `layer >= 1` or `bridge: true`; the engine should let a car stay on a bridge road over water and stop a car that leaves any road into water.
 - Bake-time merges are by outline only, so a big body split by OSM into several touching polygons (locks, harbour basins, the river pieces above) simply overlaps or abuts; treat the union as water.
 - Lakes' names come from OSM (`name`); rivers mapped as unnamed relations have `name: ""`.
+
+### LiDAR status and real numbers (2026-09-21, interim: the download is still running)
+
+- Plan (`data/raw/lidar/plan.json`, `python3 tools/fetch_lidar_city.py plan`): TNM lists 1,275 point-cloud files whose bounding box meets the city box: 831 (81.9 GB) + 26 (1.5 GB) of
+  MN_CentralMissRiver_B22 (sub-projects 4 and 5, 2022 flights) and 418 (23.3 GB) of the older 2011 Metro project. Newest project wins: **661 files, 67.2 GB, all from MN_CentralMissRiver_4_B22**
+  (500 m tiles, 47-167 MB, median 100 MB; ~87 returns/m2). The 26 tiles of sub-project 5 and the 2011 files add nothing inside the city limit (grown by 25 m); 0.0 km2 of the 150 km2
+  is uncovered. The plan is smaller than the ~95 GB first estimated because the city limit is only 150 km2, not the 17.9 x 10.7 km box.
+- SwapCity's 48 downtown files (byte-identical, same project) are rasterised in place from `~/Projects/SwapCity/data/minneapolis/laz` (read only, not copied or deleted), so 613 files / 60.6 GB
+  have to be downloaded. Fetch order: files with tall OSM buildings first (spread over the city), then nearest the downtown origin outwards.
+- Speed: rockyweb.usgs.gov serves about 250 KB/s per connection (measured with 1, 2 and 4 parallel requests: it scales per connection, so 2 connections give ~0.5 MB/s, less at busy hours).
+  2 connections at a time (the agreed maximum) means roughly 30 to 60 hours for the rest. Rasterising costs 4-9 s per file, so the download is the whole cost. Peak memory of one file: 2.6 GB.
+  If the number of connections may be raised, `n_dl` in `cmd_run` of tools/fetch_lidar_city.py is the only change (per-connection limit, so 6 connections would take ~10-20 h).
+  An alternative source of the same points is the USGS AWS EPT copy (`usgs-lidar-public.s3.amazonaws.com/MN_CentralMissRiver_4_B22`, octree nodes in EPSG:3857); not used.
+- One run from a cold start: `npm run fetch-lidar-city` (resumable: kill and restart any time). `data/raw/lidar/finish.sh` is the unattended chain that waits for the download, restarts it if files
+  failed, then runs `lidar-heights-city`, `roof-lean-city --montage` and `node tools/bake_city.mjs` (logs `finish.log`, `heights_city.out`, `roof_lean_city.out`, `bake_city.out`).
+- Checked on what is merged so far (94 files: downtown plus 40 tall-building files, 17 blocks): 10,434 of the 162,066 buildings measured (only where the whole footprint is covered), 87 stepped
+  (258 blocks). Median 9.4 m, p90 17.3 m, 682 over 20 m, 138 over 50 m, 29 over 100 m; tallest IDS Center 235.8 m. Against the 78 buildings with an explicit OSM `height` of 8 m or more:
+  78 % within 10 %, 89 % within 20 %, median difference -0.6 %. Against `building:levels * 3.4 + 2` (a rough proxy, 2,025 buildings): median +10 %, 47 % within 20 %.
+  For the downtown ids that both tools measure (630 common) the city tool agrees with `heights_lidar.json` to a median 0.0 m, 95 % within 0.7 m (the rest are 90th-percentile flips on two-level roofs).
+  Re-baked with these: heights LiDAR 10,434, OSM height 9, levels 2,917, guessed 148,706; 2,581 tiles, 45.6 MB (same as before), 2,222 tile jpgs and roofs.json untouched.
+- Roof lean (interim, 156 clear towers of 342 measured, cells 1500 m wide): the lean is NOT the same everywhere. Downtown west of x = 0 it is about (-0.17, +0.05) per metre of height, in the
+  x = 0..1500 strip about (-0.05, 0), at x = 1500..3000 (University of Minnesota / Stadium Village) it flips to (+0.07, -0.09): a roof 50 m high sits 3.5 m east and 4.5 m north of its footprint there, 8 m west
+  and 2 m south downtown. The steps between cells are the seams of the NAIP flight frames, so a single global model (or the old downtown fit extrapolated) is wrong by up to 0.24 m per metre of height
+  (12 m on a 50 m building) across the city. Montages (/tmp/sc/lean_{i}_{j}.png) show the shifted outlines sitting on the roofs in the regions checked.

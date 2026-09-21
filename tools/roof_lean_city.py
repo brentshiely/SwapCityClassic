@@ -54,17 +54,37 @@ def norm_xcorr(T, I):
 
 
 class Photos:
+    """the tile photos as one mosaic on a global pixel grid: pixel (gi, gj) covers game metres [gi/2, (gi+1)/2) x [gj/2, (gj+1)/2).
+    Tile (tx, ty)'s jpg starts at global pixel (tx*512 - 80, ty*512 - 80) and is 672 px wide, so neighbouring photos overlap by 160 px."""
     def __init__(self, tiles_dir, keep=24):
         self.dir = tiles_dir; self.cache = {}; self.order = []; self.keep = keep
-    def has(self, tx, ty): return os.path.exists(os.path.join(self.dir, f'{tx}_{ty}.jpg'))
-    def gradient(self, tx, ty):
+    def _tile(self, tx, ty):
         k = (tx, ty)
         if k in self.cache: return self.cache[k]
-        im = Image.open(os.path.join(self.dir, f'{tx}_{ty}.jpg')).convert('L').filter(ImageFilter.GaussianBlur(0.8))
-        a = np.asarray(im, dtype=np.float32); gy, gx = np.gradient(a); g = np.hypot(gx, gy)
-        self.cache[k] = g; self.order.append(k)
+        path = os.path.join(self.dir, f'{tx}_{ty}.jpg')
+        a = np.asarray(Image.open(path).convert('RGB'), dtype=np.uint8) if os.path.exists(path) else None
+        self.cache[k] = a; self.order.append(k)
         while len(self.order) > self.keep: self.cache.pop(self.order.pop(0), None)
-        return g
+        return a
+    def rgb_region(self, gi0, gj0, gi1, gj1):
+        """RGB pixels of the global box [gi0, gi1) x [gj0, gj1) and the fraction of it that a photo covers"""
+        out = np.zeros((gj1 - gj0, gi1 - gi0, 3), dtype=np.uint8); have = np.zeros((gj1 - gj0, gi1 - gi0), dtype=bool)
+        T = int(TILE * PPM); M = int(MARGIN * PPM)
+        for tx in range(math.floor((gi0 + M) / T) - 1, math.floor((gi1 + M) / T) + 1):
+            for ty in range(math.floor((gj0 + M) / T) - 1, math.floor((gj1 + M) / T) + 1):
+                ti0 = tx * T - M; tj0 = ty * T - M
+                x0 = max(gi0, ti0); x1 = min(gi1, ti0 + T + 2 * M); y0 = max(gj0, tj0); y1 = min(gj1, tj0 + T + 2 * M)
+                if x1 <= x0 or y1 <= y0: continue
+                a = self._tile(tx, ty)
+                if a is None: continue
+                out[y0 - gj0:y1 - gj0, x0 - gi0:x1 - gi0] = a[y0 - tj0:y1 - tj0, x0 - ti0:x1 - ti0]; have[y0 - gj0:y1 - gj0, x0 - gi0:x1 - gi0] = True
+        return out, float(have.mean())
+    def gradient_region(self, gi0, gj0, gi1, gj1):
+        rgb, frac = self.rgb_region(gi0, gj0, gi1, gj1)
+        if frac < 0.995: return None
+        im = Image.fromarray(rgb).convert('L').filter(ImageFilter.GaussianBlur(0.8))
+        a = np.asarray(im, dtype=np.float32); gy, gx = np.gradient(a)
+        return np.hypot(gx, gy)
 
 
 def roof_edges(store, game2utm, x0, y0, x1, y1, h):
@@ -98,28 +118,17 @@ def roof_edges(store, game2utm, x0, y0, x1, y1, h):
 def measure_building(b, h, photos, store, game2utm):
     xs = [p[0] for p in b['points']]; ys = [p[1] for p in b['points']]
     bx0, bx1, by0, by1 = min(xs), max(xs), min(ys), max(ys)
-    want = min(60.0, max(0.3 * h, 8.0))
-    # the tile whose photo holds the building (plus its padding) with the most room around it
-    best = None
-    for tx in range(math.floor((bx0 - PAD - want - MARGIN) / TILE), math.floor((bx1 + PAD + want + MARGIN) / TILE) + 1):
-        for ty in range(math.floor((by0 - PAD - want - MARGIN) / TILE), math.floor((by1 + PAD + want + MARGIN) / TILE) + 1):
-            ex0 = tx * TILE - MARGIN; ey0 = ty * TILE - MARGIN; ex1 = (tx + 1) * TILE + MARGIN; ey1 = (ty + 1) * TILE + MARGIN
-            room = min(bx0 - PAD - ex0, ex1 - (bx1 + PAD), by0 - PAD - ey0, ey1 - (by1 + PAD))
-            if room > 0 and (best is None or room > best[0]) and photos.has(tx, ty): best = (room, tx, ty, ex0, ey0)
-    if best is None: return None, 'no photo'
-    room, tx, ty, ex0, ey0 = best
-    R = min(want, room - 0.5)
-    if R < 0.12 * h + 1.5: return None, 'too close to the photo edge'
-    G = photos.gradient(tx, ty)
-    # template box, snapped to the photo pixel grid
-    i0 = int(math.floor((bx0 - PAD - ex0) * PPM)); i1 = int(math.ceil((bx1 + PAD - ex0) * PPM))
-    j0 = int(math.floor((by0 - PAD - ey0) * PPM)); j1 = int(math.ceil((by1 + PAD - ey0) * PPM))
+    R = min(60.0, max(0.3 * h, 8.0))
+    # template box and search window, snapped to the global 2 px/m pixel grid
+    i0 = int(math.floor((bx0 - PAD) * PPM)); i1 = int(math.ceil((bx1 + PAD) * PPM))
+    j0 = int(math.floor((by0 - PAD) * PPM)); j1 = int(math.ceil((by1 + PAD) * PPM))
     Rp = int(math.floor(R * PPM))
-    if i0 - Rp < 0 or j0 - Rp < 0 or i1 + Rp > G.shape[1] or j1 + Rp > G.shape[0]: return None, 'outside photo'
-    E = roof_edges(store, game2utm, ex0 + i0 / PPM, ey0 + j0 / PPM, ex0 + i1 / PPM, ey0 + j1 / PPM, h)
+    G = photos.gradient_region(i0 - Rp, j0 - Rp, i1 + Rp, j1 + Rp)
+    if G is None: return None, 'no photo'
+    E = roof_edges(store, game2utm, i0 / PPM, j0 / PPM, i1 / PPM, j1 / PPM, h)
     if E is None: return None, 'no lidar'
     if E.shape != (j1 - j0, i1 - i0): return None, 'shape'
-    I = G[j0 - Rp:j1 + Rp, i0 - Rp:i1 + Rp]
+    I = G
     ncc = norm_xcorr(E.astype(np.float64), I.astype(np.float64))
     if ncc is None: return None, 'flat template'
     ncc = np.nan_to_num(ncc, nan=-1)
@@ -173,7 +182,7 @@ def lean_at(js, x, y):
     return js['lean'].get(k, js['fallback'])
 
 
-def montage(meas, js, tiles_dir, out_dir, per_region=6, regions=None):
+def montage(meas, js, photos, out_dir, per_region=6, regions=None):
     """for a few regions: crops of the tile photo around tall buildings with the footprint drawn as it is (yellow) and shifted by
     h * lean of its region (red)"""
     from PIL import ImageDraw
@@ -193,15 +202,13 @@ def montage(meas, js, tiles_dir, out_dir, per_region=6, regions=None):
             xs = [p[0] for p in b['points']]; ys = [p[1] for p in b['points']]
             pad = 14 + abs(ax) * h
             x0, x1, y0, y1 = min(xs) - 14 - max(0, -ax * h), max(xs) + 14 + max(0, ax * h), min(ys) - 14 - max(0, -ay * h), max(ys) + 14 + max(0, ay * h)
-            tx, ty = math.floor(m['cx'] / TILE), math.floor(m['cy'] / TILE)
-            path = os.path.join(tiles_dir, f'{tx}_{ty}.jpg')
-            if not os.path.exists(path): continue
-            im = Image.open(path).convert('RGB'); ex0, ey0 = tx * TILE - MARGIN, ty * TILE - MARGIN
-            box = (int((x0 - ex0) * PPM), int((y0 - ey0) * PPM), int((x1 - ex0) * PPM), int((y1 - ey0) * PPM))
-            if box[0] < 0 or box[1] < 0 or box[2] > im.width or box[3] > im.height: continue
-            crop = im.crop(box).resize(((box[2] - box[0]) * S // 2, (box[3] - box[1]) * S // 2), Image.LANCZOS)
+            gi0 = int(math.floor(x0 * PPM)); gj0 = int(math.floor(y0 * PPM)); gi1 = int(math.ceil(x1 * PPM)); gj1 = int(math.ceil(y1 * PPM))
+            rgb, frac = photos.rgb_region(gi0, gj0, gi1, gj1)
+            if frac < 0.99: continue
+            crop = Image.fromarray(rgb).resize(((gi1 - gi0) * S // 2, (gj1 - gj0) * S // 2), Image.LANCZOS)
+            box = (gi0, gj0, gi1, gj1); ex0 = ey0 = 0.0
             d = ImageDraw.Draw(crop)
-            def px(p, sh=(0, 0)): return ((p[0] + sh[0] - box[0] / PPM - ex0) * S, (p[1] + sh[1] - box[1] / PPM - ey0) * S)
+            def px(p, sh=(0, 0)): return ((p[0] + sh[0] - box[0] / PPM) * S, (p[1] + sh[1] - box[1] / PPM) * S)
             pts = b['points']
             d.line([px(p) for p in pts] + [px(pts[0])], fill=(255, 230, 0), width=1)
             sh = (ax * h, ay * h)
@@ -276,7 +283,7 @@ def main():
     for k, v in sorted(js['lean'].items(), key=lambda kv: tuple(int(x) for x in kv[0].split('_'))):
         inf = js['cells_info'][k]; print(f'  cell {k:>6}  lean ({v[0]:+.3f}, {v[1]:+.3f})  n={inf["n"]:3d} ({inf["from"]})  mad {inf["mad"]}')
     if a.montage:
-        for p in montage(meas, js, a.tiles, a.montage_dir): print('montage', p)
+        for p in montage(meas, js, photos, a.montage_dir): print('montage', p)
     print(f'-> {a.out}  ({time.time() - t0:.0f} s)')
     # keep the raw measurements for inspection (not part of the deliverable)
     json.dump([{k: v for k, v in m.items() if k != 'b'} for m in meas], open(os.path.join(lc.LIDAR_DIR, 'roof_lean_measurements.json'), 'w'))

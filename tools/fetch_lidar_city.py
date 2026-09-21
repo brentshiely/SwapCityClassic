@@ -388,7 +388,7 @@ def cmd_run(args):
             q.put(f)
             time.sleep(1.0)          # be polite
 
-    n_dl = 2
+    n_dl = 6  # the server gives ~250 KB/s per connection, so more connections finish sooner (raised from 2 with the downloads well under way)
     threads = [threading.Thread(target=downloader, daemon=True) for _ in range(n_dl)]
     for t in threads: t.start()
     processed = 0

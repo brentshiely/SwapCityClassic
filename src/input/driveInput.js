@@ -16,7 +16,7 @@ export class DriveInput {
   resetPressed() { return Phaser.Input.Keyboard.JustDown(this.keys.r); }
 
   read(dt) {
-    if (this.autopilot) return (this.route === 'crash' ? this.crash : this.script).call(this, (this.t += dt));
+    if (this.autopilot) return (this.route === 'crash' ? this.crash : this.route === 'straight' ? this.straight : this.script).call(this, (this.t += dt));
     const k = this.keys;
     const steer = (k.right.isDown || k.d.isDown ? 1 : 0) - (k.left.isDown || k.a.isDown ? 1 : 0);
     return { throttle: k.up.isDown || k.w.isDown ? 1 : 0, brake: k.down.isDown || k.s.isDown ? 1 : 0, steer, handbrake: k.space.isDown };
@@ -31,6 +31,11 @@ export class DriveInput {
       steer: between(3.5, 4.3) ? 1 : 0,
       handbrake: between(3.5, 4.2),
     };
+  }
+
+  // full throttle straight ahead: drives into whatever is on the road
+  straight(t) {
+    return { throttle: t >= 0.5 ? 1 : 0, brake: 0, steer: 0, handbrake: false };
   }
 
   // accelerate, then swing left at the buildings without lifting

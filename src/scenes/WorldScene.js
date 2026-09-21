@@ -7,6 +7,8 @@ import { Car, CAR, PHYSICS_STEP } from '../vehicles/carPhysics.js';
 import { CollisionWorld } from '../world/collision.js';
 import { CarView } from '../vehicles/carView.js';
 import { DriveInput } from '../input/driveInput.js';
+import { TrafficSim, pushPlayerOutOfTraffic } from '../traffic/trafficSim.js';
+import { TrafficView } from '../traffic/trafficView.js';
 import { findStart } from '../world/start.js';
 
 const STEP = PHYSICS_STEP; // fixed physics step
@@ -45,7 +47,12 @@ export class WorldScene extends Phaser.Scene {
     this.start = findStart(map);
     this.car = new Car(this.start.x, this.start.y, this.start.heading);
     this.collision = new CollisionWorld(map);
+    this.trafficOn = !params.has('notraffic');
+    const seed = Number(params.get('seed')) || Math.floor(Math.random() * 1e6);
+    this.traffic = new TrafficSim(map, { count: Number(params.get('cars')) || 16, seed });
+    if (this.trafficOn) this.traffic.fill(null, this.car);
     this.carView = new CarView(this, map.meta.world);
+    this.trafficView = new TrafficView(this, this.traffic);
     this.input2 = new DriveInput(this);
     this.acc = 0;
     this.camX = this.car.x; this.camY = this.car.y; this.camZoom = ZOOM_NEAR;
@@ -80,6 +87,7 @@ export class WorldScene extends Phaser.Scene {
       while (this.acc >= STEP) {
         car.step(this.input2.read(STEP), STEP);
         this.collision.resolve(car, STEP);
+        if (this.trafficOn) pushPlayerOutOfTraffic(car, this.traffic.cars);
         this.acc -= STEP;
         this.simTime += STEP;
       }
@@ -95,7 +103,12 @@ export class WorldScene extends Phaser.Scene {
     this.applyCamera();
     this.buildings.update(this.camX, this.camY, this.camZoom, cam.width, cam.height);
 
-    this.hudText(`${Math.round(car.speed * 3.6)} km/h`, '↑/W gas   ↓/S brake + reverse   ←→/AD steer   Space handbrake   R restart');
+    // traffic: cars spawn only outside what the player can see
+    const view = { cx: this.camX, cy: this.camY, hw: cam.width / (2 * this.camZoom), hh: cam.height / (2 * this.camZoom) };
+    if (this.trafficOn && (!this.stopAt || this.simTime < this.stopAt)) this.traffic.update(dt, { x: car.x, y: car.y, heading: car.heading }, view);
+    this.trafficView.update(view);
+
+    this.hudText(`${Math.round(car.speed * 3.6)} km/h  |  ${this.traffic.cars.length} cars`, '↑/W gas   ↓/S brake + reverse   ←→/AD steer   Space handbrake   R restart');
   }
 
   hudText(left, controls) {

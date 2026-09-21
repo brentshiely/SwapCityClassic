@@ -1,5 +1,6 @@
 import { asphaltTile, paverTile, grassTile } from './textures.js';
 import { computeBarriers } from '../world/barriers.js';
+import { polyInfo, pointAt, junctionInfo } from '../world/geometry.js';
 
 // The ground (sidewalks, roads, curbs, markings, crosswalks) is painted ONCE at load into large
 // raster chunks with canvas 2D, then drawn as ordinary images. Nothing here runs per frame.
@@ -121,6 +122,7 @@ function paintChunk(ctx, map, pat, originX, originY, edge) {
 
   paintMarkings(ctx, map);
   paintCrosswalks(ctx, map, pat);
+  paintStopLines(ctx, map);
   paintEdge(ctx, map, edge);
 }
 
@@ -167,6 +169,28 @@ function paintEdge(ctx, map, { barriers }) {
       ctx.strokeRect(-T / 2, y, T, h);
     }
     ctx.restore();
+  }
+}
+
+// A white stop line across the lanes of every approach to a signalized junction; the traffic stops here for a red light.
+function paintStopLines(ctx, map) {
+  const ji = junctionInfo(map);
+  ctx.fillStyle = 'rgba(240,240,232,0.92)';
+  for (const e of map.graph.edges) {
+    for (const end of ['to', 'from']) {
+      const node = map.graph.nodes[end === 'to' ? e.to : e.from];
+      if (!node.signal || node.degree < 3) continue;
+      if (end === 'from' && e.oneway) continue; // nobody drives into the 'from' end of a one-way street
+      const pts = end === 'to' ? e.points : e.points.slice().reverse();
+      const info = polyInfo(pts), p = pointAt(info, info.len - ji.get(node.id).stopDist);
+      const width = Math.max(6.6, e.lanes * 3.3);
+      const len = e.oneway ? width - 0.6 : width / 2 - 0.4, centre = e.oneway ? 0 : width / 4; // two-way: only the lanes going toward the junction
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(Math.atan2(p.ty, p.tx));
+      ctx.fillRect(-0.25, centre - len / 2, 0.5, len);
+      ctx.restore();
+    }
   }
 }
 

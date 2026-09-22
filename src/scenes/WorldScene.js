@@ -298,6 +298,8 @@ export class WorldScene extends Phaser.Scene {
     this.fx.update(dt, car, d, !this.wreck);
     // a paint shop: drive in slowly, pay, and the car is new and the police lose interest
     this.sprayT = (this.sprayT ?? 0) - dt;
+    const nearShop = this.player.inCar && this.sprays.some((s) => Math.hypot(car.x - s.x, car.y - s.y) <= 6);
+    this.sprayHint = nearShop && !this.missions.message; // shown from updateMissions, so it never fights the mission text
     if (this.player.inCar && this.sprayT <= 0 && car.speed < 9) {
       for (const s of this.sprays) {
         if (Math.hypot(car.x - s.x, car.y - s.y) > 6 || !(d.hp < 100 || this.police.wanted.stars > 0)) continue;
@@ -320,8 +322,6 @@ export class WorldScene extends Phaser.Scene {
     this.wreck = true;
     if (Math.hypot(me.x - car.x, me.y - car.y) < 6.5) this.wasted();
   }
-
-  /** missions: the phone to answer,
 
   /** missions: the phone to answer, the objective, the target marker, cash */
   updateMissions(dt, me) {
@@ -359,6 +359,7 @@ export class WorldScene extends Phaser.Scene {
       const dist = obj.target ? `${Math.round(Math.hypot(obj.target.x - me.x, obj.target.y - me.y))} m` : '';
       html = `<b>${obj.title}</b> (${obj.step}/${obj.steps}): ${obj.text}${dist ? `  ·  ${dist}` : ''}${obj.timeLeft !== null ? `  ·  ${Math.ceil(obj.timeLeft)} s` : ''}   <small>(M abandons)</small>`;
     } else if (offer && m.offerAt(me.x, me.y)) html = `<b>${offer.title}</b>: ${offer.brief}   <b>Press M to take the job</b>`;
+    else if (this.sprayHint) html = this.damage.hp < 100 || this.police.wanted.stars > 0 ? '<b>Pay \'n\' Spray</b>: slow down to $100 for a fresh coat and a clean sheet' : '<b>Pay \'n\' Spray</b> (green): nothing to fix right now';
     if (html !== this.missionHtml || cls !== this.missionCls) { this.missionHtml = html; this.missionCls = cls; el.innerHTML = html; el.className = cls; el.style.display = html ? 'block' : 'none'; }
     const cash = `$${m.cash.toLocaleString('en-US')}`, stars = this.police.wanted.stars, hot = this.police.nearest < 70 && this.time.now % 600 < 300;
     const starsKey = `${stars}${hot ? 'h' : ''}`;

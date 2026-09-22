@@ -94,4 +94,3 @@ Accept: Brent plays for ten minutes and signs off.
 - Water, bridges, tunnels and the layer system on a bigger map (Lowry Hill tunnel, Mississippi, the lakes).
 - More cities (Chicago, La Crosse and others) as swappable data sets.
 - Deploy to Cloudflare at profitcapture.com.
-- A LinkedIn/Reddit post about the project.

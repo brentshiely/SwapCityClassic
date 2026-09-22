@@ -1,6 +1,7 @@
-// Missions: a small state machine. A mission is a list of steps (go somewhere, steal a car, take out some people), each perhaps with a time
-// limit; finishing the last one pays. Places are given by street name and resolved against the road graph, so they land on the real streets.
-// Pure logic, no Phaser: the game feeds it where the player is each frame and shows what it says (objective text, target, time left).
+// Missions: a small state machine. A mission is a list of steps (go somewhere, swap into a car on the street), each perhaps with a
+// time limit; finishing the last one pays. Places are given by street name and resolved against the road graph, so they land on
+// the real streets. Pure logic, no Phaser: the game feeds it where the player is each frame and shows what it says (objective
+// text, target, time left).
 
 export const MISSIONS = [
   {
@@ -10,18 +11,18 @@ export const MISSIONS = [
   },
   {
     id: 'borrowed', title: 'Borrowed Wheels', giver: { street: 'Nicollet Mall', near: [-56, 0] }, reward: 900,
-    brief: 'Get out. Take somebody else\'s car (E next to it) and deliver it to Hennepin Avenue.',
+    brief: 'Get out, swap into a different car on the street (E next to it), and deliver it to Hennepin Avenue.',
     steps: [
-      { kind: 'steal', text: 'Steal a car: get out (E) and take one from the street' },
-      { kind: 'goto', target: { street: 'Hennepin Avenue', near: [-30, -1060] }, radius: 20, need: 'stolen', time: 160, text: 'Deliver the stolen car to Hennepin Avenue' },
+      { kind: 'swap', text: 'Swap cars: get out (E) and take a different one from the street' },
+      { kind: 'goto', target: { street: 'Hennepin Avenue', near: [-30, -1060] }, radius: 20, need: 'swapped', time: 160, text: 'Deliver it to Hennepin Avenue' },
     ],
   },
   {
     id: 'legwork', title: 'Leg Work', giver: { street: 'South 8th Street', near: [0, 60] }, reward: 700,
-    brief: 'No wheels this time. Walk to the river bank, and clear the crowd off the street on the way back.',
+    brief: 'No wheels this time. Walk down to the river bank, take in the view, and walk back.',
     steps: [
       { kind: 'goto', target: { street: 'Nicollet Mall', near: [-56, 480] }, radius: 10, need: 'foot', time: 120, text: 'Walk south along Nicollet Mall to the park' },
-      { kind: 'kill', n: 3, time: 90, text: 'Shoot 3 people (Space or click)' },
+      { kind: 'goto', target: { street: 'South 8th Street', near: [0, 60] }, radius: 10, need: 'foot', time: 130, text: 'Walk back to South 8th Street' },
     ],
   },
 ];
@@ -63,7 +64,7 @@ export class MissionManager {
       ...m, spot: resolveSpot(world, m.giver),
       steps: m.steps.map((st) => ({ ...st, spot: st.target ? resolveSpot(world, st.target) : null })),
     })).filter((m) => m.spot && m.steps.every((st) => !st.target || st.spot));
-    this.active = null; this.step = 0; this.stepT = 0; this.killBase = 0; this.message = null;
+    this.active = null; this.step = 0; this.stepT = 0; this.message = null;
   }
 
   /** the next mission still to be done (in order) */
@@ -76,8 +77,8 @@ export class MissionManager {
     return m && Math.hypot(x - m.spot.x, y - m.spot.y) < radius ? m : null;
   }
 
-  start(mission, ctx) {
-    this.active = mission; this.step = 0; this.stepT = 0; this.killBase = ctx.kills | 0; this.message = { text: mission.brief, t: 6 };
+  start(mission) {
+    this.active = mission; this.step = 0; this.stepT = 0; this.message = { text: mission.brief, t: 6 };
   }
 
   /** what to show: { title, text, target: {x, y} | null, timeLeft | null } or null */
@@ -87,7 +88,7 @@ export class MissionManager {
     return { title: this.active.title, text: st.text, target: st.spot ?? null, timeLeft: st.time ? Math.max(0, st.time - this.stepT) : null, step: this.step + 1, steps: this.active.steps.length };
   }
 
-  /** ctx: {x, y, inCar, stolen, kills}. Returns the events of this frame: 'step', 'complete', 'fail'. */
+  /** ctx: {x, y, inCar, swapped}. Returns the events of this frame: 'step', 'complete', 'fail'. */
   update(dt, ctx) {
     const events = [];
     if (this.message) { this.message.t -= dt; if (this.message.t <= 0) this.message = null; }
@@ -97,12 +98,11 @@ export class MissionManager {
     let ok = false;
     if (st.kind === 'goto') {
       const near = Math.hypot(ctx.x - st.spot.x, ctx.y - st.spot.y) < st.radius;
-      const how = !st.need || (st.need === 'car' && ctx.inCar) || (st.need === 'foot' && !ctx.inCar) || (st.need === 'stolen' && ctx.inCar && ctx.stolen);
+      const how = !st.need || (st.need === 'car' && ctx.inCar) || (st.need === 'foot' && !ctx.inCar) || (st.need === 'swapped' && ctx.inCar && ctx.swapped);
       ok = near && how;
-    } else if (st.kind === 'steal') ok = !!(ctx.inCar && ctx.stolen);
-    else if (st.kind === 'kill') ok = (ctx.kills | 0) - this.killBase >= st.n;
+    } else if (st.kind === 'swap') ok = !!(ctx.inCar && ctx.swapped);
     if (ok) {
-      this.step++; this.stepT = 0; this.killBase = ctx.kills | 0;
+      this.step++; this.stepT = 0;
       if (this.step >= this.active.steps.length) {
         const m = this.active;
         this.cash += m.reward; this.done.add(m.id); this.active = null;

@@ -113,7 +113,7 @@ export class CarView {
     this.brake.setVisible(false);
   }
 
-  /** the car the player is in: null = the starting sedan, or {type, colorIndex, size, wh} for a stolen one (the traffic's textures) */
+  /** the car the player is in: null = the starting sedan, or {type, colorIndex, size, wh} for a swapped-into one (the traffic's textures) */
   setModel(m) {
     this.body.setTexture(m ? `npc_${m.type}_${m.colorIndex}` : 'car_body');
     this.brake.setTexture(m ? `npc_brake_${m.type}` : 'car_brake');

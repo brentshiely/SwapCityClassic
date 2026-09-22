@@ -12,16 +12,14 @@ writeFileSync('release/HOW TO PLAY.txt', `SwapCityClassic - how to play (works w
 1. Double-click SwapCityClassic.html (or drag it onto Google Chrome).
    Use Chrome or Safari. It is one file (${kb} KB): nothing else needs to be copied with it.
 2. Drive: arrow keys or WASD. Space = handbrake. R = restart the car.
-   E gets you out of the car; on foot: WASD/arrows walk, Shift runs, Space or a mouse click shoots the pistol (aim with the mouse),
-   E beside your car gets back in, E beside somebody else's car takes it (they run). Yellow rings are phones: stand in one and press M
-   to take a job (a pink ring and arrow show where to go); M again abandons it. Cash and finished jobs are remembered.
-   Crimes (shooting, killing, taking a car) earn stars; police cars chase you; if they catch you standing still you are BUSTED (a fine,
-   your car is gone, back to the start). Lose them for a while and the stars fade.
+   E gets you out of the car; on foot: WASD/arrows walk, Shift runs, E beside your car gets back in, E beside another car on the
+   street swaps into it. Yellow rings are phones: stand in one and press M to take a job (a pink ring and arrow show where to go);
+   M again abandons it. Cash and finished jobs are remembered.
    A pink line over the streets shows the way to your current mission objective (turn it off in the T panel if you'd rather find it yourself).
    The round radar (bottom left) shows where to go: pink is your objective (an arrow on the rim if it is far), yellow a job phone,
-   green a paint shop, flashing red/blue the police.
+   green a paint shop.
    Crashes damage the car (smoke, then fire, then it explodes; the health is under your cash); a green ring is a Pay 'n' Spray
-   ($100: repairs it and shakes off the police). Sound is made in the game: X mutes it, N turns the music on and off, H is the horn; volumes are in the T panel.
+   ($100: repairs it). Sound is made in the game: X mutes it, N turns the music on and off, H is the horn; volumes are in the T panel.
    The top of the screen shows the street you are on, your heading and the next street; the compass rose
    shows where true north is (the map is turned 30 degrees, so north is NOT straight up).
    T opens the SETTINGS panel: sliders for camera zoom, top speed, grip, traffic and crowd size.

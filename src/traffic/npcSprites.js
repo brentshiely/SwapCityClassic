@@ -17,7 +17,6 @@ function newCanvas(length, width) {
 }
 
 function drawBody({ g, w, h }, type, color) {
-  if (type === 'police') color = '#eceff1';
   const rr = (x, y, ww, hh, r) => { g.beginPath(); g.roundRect(x, y, ww, hh, r); };
   const grad = g.createLinearGradient(0, 0, 0, h);
   grad.addColorStop(0, shade(color, 1.18)); grad.addColorStop(0.5, color); grad.addColorStop(1, shade(color, 0.78));
@@ -53,13 +52,6 @@ function drawBody({ g, w, h }, type, color) {
   g.fillStyle = shade(color, 0.6); g.fillRect(w * 0.60, -2, 6, 4); g.fillRect(w * 0.60, h - 2, 6, 4);
   g.fillStyle = '#fff2b0'; g.fillRect(w - 7, 4, 5, 6); g.fillRect(w - 7, h - 10, 5, 6);
   g.fillStyle = '#5a0d0d'; g.fillRect(2, 4, 4, 6); g.fillRect(2, h - 10, 4, 6);
-  if (type === 'police') { // black doors and hood on the white body, a light bar on the roof
-    g.fillStyle = '#14171b';
-    rr(w * 0.30, 1.5, w * 0.32, h - 3, 3); g.fill(); // the doors
-    rr(w * 0.74, 3, w * 0.22, h - 6, 4); g.fill(); // the hood
-    g.fillStyle = '#e9ecee'; rr(w * 0.40, 6, w * 0.13, h - 12, 3); g.fill(); // the roof stays white
-    g.fillStyle = '#d13a2f'; g.fillRect(w * 0.435, 7, w * 0.05, (h - 14) / 2); g.fillStyle = '#2f5fd1'; g.fillRect(w * 0.435, h / 2, w * 0.05, (h - 14) / 2); // light bar
-  }
 }
 
 /** Make a texture for every body type in every colour, plus each type's shadow and brake lights. */

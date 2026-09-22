@@ -18,11 +18,9 @@ export const TYPES = [
   { name: 'sedan', length: 4.5, width: 1.9, weight: 5 },
   { name: 'van', length: 5.3, width: 2.05, weight: 1.5 },
   { name: 'pickup', length: 5.4, width: 2.0, weight: 1.5 },
-  { name: 'police', length: 4.7, width: 1.95, weight: 0 }, // never in ordinary traffic: only the police (spawnPolice)
 ];
 export const COLORS = ['#e8e8e2', '#b9bec2', '#7f8890', '#25292d', '#2f4a7a', '#3c5e45', '#7a2f2f', '#c9a23a', '#5a4635'];
 
-const POLICE_SPEED = 1.75; // police drive this many times the limit, and ignore the traffic lights
 const ACCEL = 2.6; // m/s^2
 const B_COMFORT = 3.2; // braking used to plan for corners and speed changes
 const B_STOP = 3.4; // braking used to plan a stop at a red light
@@ -111,7 +109,6 @@ export class TrafficSim {
     const weights = opts.map((o) => (turnOf(o) === 'straight' ? 6 : 2)); // straight ahead is likelier than turning
     let r = this.rand() * weights.reduce((a, b) => a + b, 0), pick = opts[0];
     for (let i = 0; i < opts.length; i++) { r -= weights[i]; if (r <= 0) { pick = opts[i]; break; } }
-    if (c.police && this.target) pick = this.pursuitHop(last, opts); // police go for the player, not for a random street
     let lane = Math.min(c.lane, pick.nl - 1);
     if (this.rand() < 0.3) lane = Math.floor(this.rand() * pick.nl);
     c.lane = lane;
@@ -146,66 +143,6 @@ export class TrafficSim {
     return !!view && Math.abs(x - view.cx) < view.hw + margin && Math.abs(y - view.cy) < view.hh + margin;
   }
 
-  /** ordinary cars (the police are extra) */
-  civilians() { let n = 0; for (const c of this.cars) if (!c.police) n++; return n; }
-
-  /**
-   * A police car appears on a street between minD and maxD metres from (x, y), out of the player's view, and chases `this.target`.
-   * Returns the car or null.
-   */
-  spawnPolice(x, y, view, minD = 90, maxD = 260) {
-    const list = [];
-    this.net.edgeGrid().query(x, y, maxD, (de) => { if (de.edge.length >= 25) list.push(de); });
-    for (let tries = 0; tries < 60 && list.length; tries++) {
-      const de = list[Math.floor(this.rand() * list.length)], lane = Math.floor(this.rand() * de.nl), info = this.net.lane(de, lane);
-      if (info.len < 25) continue;
-      const stopS = de.signal ? info.len - (this.net.jinfo.get(de.to)?.stopDist ?? 10) : null, room = stopS != null ? stopS - 12 : info.len - 14;
-      if (room < 1) continue;
-      const s = 6 + this.rand() * room, p = pointAt(info, s, this.tmp), d = Math.hypot(p.x - x, p.y - y);
-      if (d < minD || d > maxD || this.visible(p.x, p.y, view, 25)) continue;
-      if (this.cars.some((o) => Math.hypot(o.x - p.x, o.y - p.y) < 14)) continue;
-      const c = this.spawn(de, lane, s, 'police');
-      c.police = true; c.v = 8;
-      return c;
-    }
-    return null;
-  }
-
-  /**
-   * Which street a police car takes at a junction: the first step of the shortest way (A*, capped) to the junction nearest `this.target`.
-   * `opts` are the streets it may take (no U-turns, lane rules already applied).
-   */
-  pursuitHop(from, opts) {
-    const net = this.net, T = this.target;
-    if (!T || opts.length === 1) return opts[0];
-    if (!this.goalCache || Math.hypot(this.goalCache.x - T.x, this.goalCache.y - T.y) > 25) {
-      let best = null, bd = Infinity;
-      for (const n of net.nodes) { const d = Math.hypot(n.x - T.x, n.y - T.y); if (d < bd) { bd = d; best = n; } }
-      this.goalCache = { x: T.x, y: T.y, node: best };
-    }
-    const goal = this.goalCache.node;
-    if (!goal) return opts[0];
-    const h = (id) => { const n = net.nodeById.get(id); return Math.hypot(n.x - goal.x, n.y - goal.y); };
-    // A* over directed streets, each first hop remembered
-    const open = new Map(), best = new Map(), closed = new Set();
-    for (const o of opts) { const g = o.edge.length; open.set(o.to, { id: o.to, g, f: g + h(o.to), hop: o }); best.set(o.to, g); }
-    let bestPartial = null, expanded = 0;
-    while (open.size && expanded < 900) {
-      let cur = null;
-      for (const n of open.values()) if (!cur || n.f < cur.f) cur = n;
-      open.delete(cur.id); closed.add(cur.id); expanded++;
-      if (!bestPartial || h(cur.id) < h(bestPartial.id)) bestPartial = cur;
-      if (cur.id === goal.id) return cur.hop;
-      for (const o of net.out.get(cur.id) ?? []) {
-        if (closed.has(o.to) || o.edge === from.de.edge && o.to === from.de.from) continue;
-        const g = cur.g + o.edge.length;
-        if (g >= (best.get(o.to) ?? Infinity)) continue;
-        best.set(o.to, g); open.set(o.to, { id: o.to, g, f: g + h(o.to), hop: cur.hop });
-      }
-    }
-    return (bestPartial ?? { hop: opts[0] }).hop;
-  }
-
   /** the directed streets that come within `radius` of the anchor (long enough to spawn on), with running length totals for a weighted pick */
   nearbyEdges(a) {
     const list = [], cum = [];
@@ -225,7 +162,7 @@ export class TrafficSim {
     const a = this.anchor(view, player);
     let near = null; // the streets around the player, looked up only when a car is actually needed
     // (a lot of nearby streets are too short or too close to a light to hold a car, so the local first fill needs more tries)
-    for (let tries = 0, max = a ? 40 + 3 * this.count : 40; this.civilians() < this.count && tries < max; tries++) {
+    for (let tries = 0, max = a ? 40 + 3 * this.count : 40; this.cars.length < this.count && tries < max; tries++) {
       let de;
       if (a) {
         near ??= this.nearbyEdges(a);
@@ -412,19 +349,18 @@ export class TrafficSim {
 
   driveCar(c, dt, player) {
     const seg = c.segs[0];
-    const boost = c.police ? POLICE_SPEED : 1;
-    let vt = seg.limit * boost;
+    let vt = seg.limit;
 
     // slow down in time for corners and lower limits on the road ahead
     let dist = seg.info.len - c.s;
     for (let i = 1; i < c.segs.length && i <= 2; i++) {
       const nx = c.segs[i];
-      vt = Math.min(vt, Math.sqrt((nx.limit * boost) ** 2 + 2 * B_COMFORT * Math.max(0, dist - c.length / 2)));
+      vt = Math.min(vt, Math.sqrt(nx.limit ** 2 + 2 * B_COMFORT * Math.max(0, dist - c.length / 2)));
       dist += nx.info.len;
     }
 
-    // traffic light (the police do not stop)
-    if (seg.stopS != null && !c.police) {
+    // traffic light
+    if (seg.stopS != null) {
       const d = seg.stopS - (c.s + c.length / 2);
       if (d > -0.6) {
         const st = this.signals.state(seg.de, this.t);
@@ -442,19 +378,13 @@ export class TrafficSim {
       if (d > -0.6) vt = Math.min(vt, Math.sqrt(2 * B_STOP * Math.max(0, d - 0.9)));
     }
 
-    // a police car that is nearly on its target pulls up beside it instead of driving past
-    if (c.police && this.target) {
-      const dT = Math.hypot(c.x - this.target.x, c.y - this.target.y);
-      if (dT < 16) vt = Math.min(vt, Math.max(0, (dT - 3.2) * 1.4));
-    }
-
     // whatever is in front
     const lead = this.leadGap(c, player);
     c.waitFor = lead ? lead.who : null;
     if (lead) vt = Math.min(vt, Math.sqrt(2 * B_LEAD * Math.max(0, lead.gap - STAND_GAP)));
 
     const v0 = c.v;
-    c.v = c.v < vt ? Math.min(vt, c.v + ACCEL * (c.police ? 1.9 : 1) * dt) : Math.max(vt, c.v - B_MAX * dt);
+    c.v = c.v < vt ? Math.min(vt, c.v + ACCEL * dt) : Math.max(vt, c.v - B_MAX * dt);
     c.braking = (v0 - c.v) / dt > 0.7 || (c.v < 0.3 && vt < 0.3);
     if (c.ghostT > 0) c.ghostT -= dt;
 

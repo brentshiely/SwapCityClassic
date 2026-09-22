@@ -1,4 +1,4 @@
-// What the game sounds like, as numbers: how loud and how high each sound is for the state of the car, the people and the police.
+// What the game sounds like, as numbers: how loud and how high each sound is for the state of the car and the people around it.
 // Pure maths (no Web Audio), so it can be tested in Node; sound.js turns these into actual sound.
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -28,7 +28,7 @@ export function crash(speedLost) {
   return { gain: 0.25 + 0.65 * k, freq: 150 - 80 * k, noise: 0.4 + 0.6 * k };
 }
 
-/** the siren of the nearest police car: heard from 160 m, loud up close */
+/** a siren (heard from 160 m, loud up close): not used by anything yet, kept for a future emergency vehicle */
 export function siren(distance) {
   if (!(distance < 160)) return 0;
   const near = 1 - clamp01((distance - 8) / 152);
@@ -37,9 +37,6 @@ export function siren(distance) {
 
 /** how often a walking person's footsteps sound (per second); none when standing */
 export function stepsPerSecond(speed) { return speed < 0.4 ? 0 : 1.6 + speed * 0.5; }
-
-/** a shot's loudness: everyone hears it, the player most */
-export const SHOT = { gain: 0.55, freq: 900 };
 
 // ---- the music: a small generative loop in a minor key (A minor, Am - F - C - G), 88 beats per minute
 export const MUSIC = {

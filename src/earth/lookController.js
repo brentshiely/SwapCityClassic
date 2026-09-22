@@ -65,7 +65,7 @@ export class LookController {
 
   /** should Google be running right now? (also records why not, for the on-screen label) */
   wanted() {
-    if (!KEY) { this.reason = 'no Google key in this build'; return false; }
+    if (!KEY) { this.reason = ''; return false; } // this build has no Google mode at all: same as picking "Offline" for good, not a failure worth naming
     if (this.far) { this.reason = 'Google Earth is only lined up over downtown'; return false; }
     if (this.failed) {
       // a failed launch is not forever: flight wifi comes and goes. Try again later (Auto and Google, never when Offline is chosen).

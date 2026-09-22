@@ -1,6 +1,6 @@
 // The radar: a round map in the corner, north-up like the main view (the map is turned so the streets run straight, and so does the radar),
 // showing the streets and water around the player and where to go: the current objective (pink, with an arrow on the rim when it is beyond
-// the range), the phone to answer (yellow), paint shops (green) and the police (flashing red and blue).
+// the range), the phone to answer (yellow) and paint shops (green).
 
 const SIZE = 176, RANGE = 380; // pixels, metres from the middle to the rim
 const BASE = SIZE * 1.7; // the street picture is drawn this big (in CSS pixels), so it can slide a good way before it is redrawn
@@ -51,7 +51,7 @@ export class Radar {
   }
 
   /**
-   * @param s { x, y, heading, target: {x, y} | null, phone: {x, y} | null, shops: [{x, y}], police: [{x, y}], t }
+   * @param s { x, y, heading, target: {x, y} | null, phone: {x, y} | null, shops: [{x, y}], t }
    */
   update(dt, s) {
     this.t += dt;
@@ -80,8 +80,6 @@ export class Radar {
     };
     for (const p of s.shops) blip(p, '#5fd48a', 3.2, false);
     if (s.phone) blip(s.phone, '#ffd84a', 4, true);
-    const flash = Math.floor(this.t * 6) % 2;
-    for (const p of s.police) blip(p, flash ? '#ff4a3a' : '#3a6bff', 3, false);
     if (s.target) { const pulse = 1 + 0.25 * Math.sin(this.t * 6); blip(s.target, '#ff5a9a', 4.6 * pulse, true); }
     // the player: a white arrow facing the way the car points
     g.save(); g.translate(half, half); g.rotate(s.heading);

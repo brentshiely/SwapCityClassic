@@ -86,8 +86,11 @@ Accept: Brent plays for ten minutes and signs off.
 
 ## Later (not in the flight build)
 
-- Step 4: exit the car, on foot, carjacking, shooting, missions.
-- Step 5: police and wanted level.
+- Step 4: exit the car, walk around, swap into another car on the street, missions. **Built 2026-09-22, then reworked the same day**:
+  the first pass followed the original GTA1 homage literally (a pistol, carjacking framed as theft, a police/wanted-level chase and
+  arrest). Brent's actual goal for the game is nostalgic city driving, not a crime sim, so all of that came back out: no weapon, no
+  police, and "taking a car" is just swapping into one (fitting, given the game's own name) with no violence or theft framing.
+- ~~Step 5: police and wanted level.~~ Built, then removed the same day for the reason above.
 - Sound and music (SFX first).
 - Car damage levels.
 - Real sprite art; Brent's ten real cars as drivable vehicles.

@@ -50,15 +50,13 @@ The car waits if the tile under it has not arrived. Downtown-only dev data: `nod
 City-wide roof photos: `npm run fetch-naip-city` + `npm run bake-roof-tiles` write `tiles/{tx}_{ty}.jpg` (672 px, 2 px/m, 40 m margin) and `roofs.json`; the tile brings its photo and `RoofCutter` cuts roofs from it (downtown keeps its sharper global photo; the lean outside downtown is held constant). Not yet city-wide: LiDAR heights (downtown only; elsewhere heights are guessed), and Google mode
 (only lined up within ~1.8 km of downtown, then the offline look). The flight build is tag `flight-2026-09-28` (+ `release/flight/`).
 
-## On foot, car-jacking, the pistol, missions
+## On foot, swapping cars, missions
 
 `src/player/playerController.js` is the player as a person: E gets out (the car stays as an obstacle: `traffic.obstacles`, and the walker stops
 cars: `traffic.walkers`), WASD/arrows walk and Shift runs (`walker.js`, stopped by the same walls as the car via `CollisionWorld.resolveCircle`), E
-beside the parked car gets back in, E beside a traffic car (slower than 11 m/s) takes it: the driver is pulled out and runs
-(`PedSim.spawnLoose`, `alarm`), the car leaves the traffic, and the player's car takes its look (`CarView.setModel`); the old car is gone.
-The pistol (`weapon.js`, Space or click, aim with the mouse) is a hitscan shot: a building stops it, the first person in line dies
-(`PedSim.kill`), leaving a body and blood, and everyone within 24 m runs. `src/missions/missions.js` is a pure state machine
-(steps: `goto` (on foot / in a car / in a stolen car), `steal`, `kill`; time limits; rewards); places are named streets resolved on the road
+beside the parked car gets back in, E beside a traffic car (slower than 11 m/s) swaps into it: it becomes the player's car (`CarView.setModel`)
+and the one they left just rejoins the street scene. `src/missions/missions.js` is a pure state machine
+(steps: `goto` (on foot / in a car / in a swapped car), `swap`; time limits; rewards); places are named streets resolved on the road
 graph. Yellow rings are the phones (M to take the job), pink is the target. Cash and finished jobs are kept in localStorage.
 Tests: `tools/test_onfoot.mjs`, `tools/test_missions.mjs`.
 
@@ -73,8 +71,8 @@ turns it off. Test: `tools/test_route.mjs`.
 ## Radar and street names
 
 `src/ui/radar.js`: a round north-up radar (bottom left, 380 m range) with the streets (freeways in gold) and water, the player as a white arrow,
-the current objective in pink (an arrow on the rim with the distance when it is beyond the range), the mission phone in yellow, paint shops in
-green and police cars flashing red and blue. Freeways and ramps have no `name` in OpenStreetMap, only a route number: `tools/fetch_road_refs.mjs`
+the current objective in pink (an arrow on the rim with the distance when it is beyond the range), the mission phone in yellow, and paint
+shops in green. Freeways and ramps have no `name` in OpenStreetMap, only a route number: `tools/fetch_road_refs.mjs`
 downloads those tags (`data/raw/city/road_refs.json`) and `tools/bake_city.mjs` names roads from them ("I-394", "I-94 / MN 55", "Ramp to I-94 East",
 "Ramp") so the street indicator never says "Unnamed street" on a freeway.
 
@@ -82,26 +80,17 @@ downloads those tags (`data/raw/city/road_refs.json`) and `tools/bake_city.mjs` 
 
 `src/vehicles/damage.js`: a hit (the speed lost in one moment, over 2.5 m/s) costs health; four levels (fine, dented 75, smoking 50, burning 22);
 a damaged car is weaker (top speed and acceleration x0.97 / 0.88 / 0.7, less grip); a burning car loses health until it explodes.
-`carFx.js` draws the smoke, flames and the blast; `CarView.setDamage` darkens the bodywork. The blast (9 m) kills people, destroys traffic cars
-near it and, if the player is close, WASTES them (a hospital bill of 10%, a new car at the start). Green rings are Pay 'n' Spray shops: drive in
-slowly for $100 and the car is repaired and the police forget you. The car's health is shown under the cash. Test: `tools/test_damage.mjs`.
+`carFx.js` draws the smoke, flames and the blast; `CarView.setDamage` darkens the bodywork. The blast (9 m) destroys traffic cars near it and,
+if the player is too close, sends them back to the start with a tow bill (10% of cash, at least $50) and a fresh car. Green rings are Pay 'n'
+Spray shops: drive in slowly for $100 and the car is repaired. The car's health is shown under the cash. Test: `tools/test_damage.mjs`.
 
 ## Sound
 
 All sound is made in code with Web Audio (`src/audio/`): `params.js` turns the state of the game into numbers (pure, tested by
 `tools/test_audio.mjs`), `sound.js` plays them: an engine (two oscillators through a low-pass, pitch and loudness follow speed and throttle, gear
-"steps", road noise), tyre squeal on slides and the handbrake, crashes (from the speed lost in one moment), gunshots, footsteps, the police
-siren (a swept triangle wave, heard up to 160 m), a horn (H) and a small generative music loop (A minor, 88 bpm; N turns it on and off).
+"steps", road noise), tyre squeal on slides and the handbrake, crashes (from the speed lost in one moment), footsteps, a siren (not used by
+anything yet; kept for a future emergency vehicle), a horn (H) and a small generative music loop (A minor, 88 bpm; N turns it on and off).
 X mutes everything; the T panel has Sound effects and Music volumes. The browser only allows sound after the first key press or click.
-
-## Police and the wanted level
-
-Crimes add heat (`src/police/wanted.js`: a shot 4, a killing 30, taking a car 22); heat shows as 0-5 stars (20, 60, 120, 200, 300) and cools
-when no police car has been within 70 m for 7 s. `src/police/police.js` keeps 1, 2, 3, 5 or 6 police cars (by stars) coming: they are traffic
-cars with `police` set (`TrafficSim.spawnPolice`, out of view 90-260 m away); they drive 1.75x the limit, ignore the lights, and choose their
-turns by A* toward the player's nearest junction (`pursuitHop`), pulling up beside the target. A police car close to a player who is on foot or
-nearly stopped for 2.2 s arrests them: a fine (20% of cash, at least $100), the car and the stars are gone, back at the start
-(`WorldScene.busted`). At 0 stars the cars leave once nobody can see them. Test: `tools/test_police.mjs`.
 
 ## Water, bridges and tunnels (layers)
 

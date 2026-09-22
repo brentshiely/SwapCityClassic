@@ -220,34 +220,6 @@ export class PedSim {
     return touched;
   }
 
-  // ---------- the player's gun and car-jacking ----------
-  /** a person is shot: they are gone from the crowd (the game draws the body) */
-  kill(p) { p.dead = true; this.stats.killed = (this.stats.killed ?? 0) + 1; }
-
-  /** gunfire, or a car taken: everyone within r metres of (x, y) runs away from it for a few seconds */
-  alarm(x, y, r) {
-    for (const p of this.peds) {
-      if (p.dead) continue;
-      const dx = p.x - x, dy = p.y - y, d = Math.hypot(dx, dy);
-      if (d > r) continue;
-      const l = d || 1;
-      p.state = 'flee'; p.fleeT = 3 + this.rand() * 2.5; p.fx = dx / l; p.fy = dy / l; p.fleeSpeed = FLEE_SPEED + 1.4;
-    }
-  }
-
-  /** a person appears at a spot that is not on the walking network (a driver pulled out of a car) and runs from (fromX, fromY) */
-  spawnLoose(x, y, fromX, fromY) {
-    const dx = x - fromX, dy = y - fromY, l = Math.hypot(dx, dy) || 1;
-    const p = {
-      id: this.nextId++, edge: null, s: 0, dir: 1, state: 'flee', v0: 1.3, v: 0, dead: false,
-      skin: Math.floor(this.rand() * SKINS.length), clothes: Math.floor(this.rand() * CLOTHES.length),
-      lat: 0, x, y, heading: Math.atan2(dy, dx), dist: 0, prev: null,
-      fleeT: 4, fx: dx / l, fy: dy / l, fleeSpeed: FLEE_SPEED + 1.6, waitEdge: null, vx: 0, vy: 0,
-    };
-    this.peds.push(p);
-    return p;
-  }
-
   fleeStep(p, dt, blocked) {
     p.fleeT -= dt;
     const nx = p.x + p.fx * p.fleeSpeed * dt, ny = p.y + p.fy * p.fleeSpeed * dt;

@@ -24,7 +24,6 @@ import { findStart } from '../world/start.js';
 import { PlayerController } from '../player/playerController.js';
 import { MissionManager, resolveSpot } from '../missions/missions.js';
 import { RouteView } from '../ui/routeView.js';
-import { PoliceManager } from '../police/police.js';
 import { Sound } from '../audio/sound.js';
 import { Radar } from '../ui/radar.js';
 import { CarDamage } from '../vehicles/damage.js';
@@ -115,7 +114,6 @@ export class WorldScene extends Phaser.Scene {
     this.routeView = new RouteView(this, this.world); // a coloured line over the streets to the current objective
     this.damage = new CarDamage(); this.fx = new CarFx(this); this.wreck = false;
     this.sprays = ['South 9th Street|-100,170', '2nd Avenue South|130,-60'].map((k) => { const [street, n] = k.split('|'); return resolveSpot(this.world, { street, near: n.split(',').map(Number) }); }).filter(Boolean); // paint shops
-    this.police = new PoliceManager(this.traffic); // crimes raise the wanted level; police cars chase (traffic cars with `police` set)
     this.keyM = this.input.keyboard.addKey('M');
     // missions: cash and finished missions are kept in this browser
     this.missions = new MissionManager(this.world, {
@@ -191,7 +189,7 @@ export class WorldScene extends Phaser.Scene {
 
     const dt = Math.min(delta / 1000, 0.05);
     const car = this.car;
-    if (this.input2.resetPressed()) { car.reset(this.start.x, this.start.y, this.start.heading); this.layers.reset(0); this.camX = car.x; this.camY = car.y; if (!this.player.inCar) this.player.enterCar(); this.damage.reset(); this.wreck = false; this.carView.setModel(null); this.player.stolen = false; }
+    if (this.input2.resetPressed()) { car.reset(this.start.x, this.start.y, this.start.heading); this.layers.reset(0); this.camX = car.x; this.camY = car.y; if (!this.player.inCar) this.player.enterCar(); this.damage.reset(); this.wreck = false; this.carView.setModel(null); this.player.swapped = false; }
     const st = this.settings;
     CAR.vMax = st.vMax * this.damage.power; CAR.accel = st.accel * this.damage.power; CAR.grip = st.grip * this.damage.grip; // a damaged car is weaker
     const inCar = this.player.inCar;
@@ -202,7 +200,7 @@ export class WorldScene extends Phaser.Scene {
       const nose = { x: car.x + Math.cos(car.heading) * 3, y: car.y + Math.sin(car.heading) * 3 };
       car.ghost = this.layers.onRoad && (this.collision.insideSolid(car.x, car.y) || this.collision.insideSolid(nose.x, nose.y));
     }
-    this.player.update(dt); // E (get out / in / take a car), walking, the pistol
+    this.player.update(dt); // E (get out / in / swap cars), walking
     const me = this.player.focus(); // the car, or the person on foot
 
     // tiles around the player; if the one under them has not arrived yet (a slow connection), they wait rather than walk through buildings
@@ -253,15 +251,11 @@ export class WorldScene extends Phaser.Scene {
     this.pedView.update();
 
     this.navHud.update({ x: me.x, y: me.y, vx: me.vx, vy: me.vy, heading: me.heading });
-    if (this.trafficOn) {
-      const ev = this.police.update(dt, { x: me.x, y: me.y, vx: me.vx, vy: me.vy, layer: me.layer, inCar: this.player.inCar }, view);
-      if (ev === 'busted') this.busted();
-    }
     this.updateMissions(dt, me);
     this.updateDamage(dt, me);
     {
       const obj = this.missions.objective(), offer = this.missions.active ? null : this.missions.nextOffer();
-      this.radar.update(dt, { x: me.x, y: me.y, heading: me.heading, target: obj?.target ?? null, phone: offer?.spot ?? null, shops: this.sprays, police: this.traffic.cars.filter((c) => c.police && !c.dead) });
+      this.radar.update(dt, { x: me.x, y: me.y, heading: me.heading, target: obj?.target ?? null, phone: offer?.spot ?? null, shops: this.sprays });
     }
     // sound
     const snd = this.sound;
@@ -269,23 +263,19 @@ export class WorldScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.keyN)) { this.settings.music = this.settings.music > 0 ? 0 : 0.35; this.applySettings(); }
     if (Phaser.Input.Keyboard.JustDown(this.keyH) && this.player.inCar) snd.horn();
     const inp = this.lastInput ?? {};
-    snd.update({ inCar: this.player.inCar, speed: car.speed, vMax: CAR.vMax, throttle: inp.throttle ?? 0, sideSpeed: car.sideSpeed ?? 0, handbrake: !!inp.handbrake, walkSpeed: this.player.inCar ? 0 : this.player.walker.speed, policeDistance: this.police.nearest, dt });
-    this.hudText(`${this.player.inCar ? `${Math.round(car.speed * 2.23694)} mph (${Math.round(car.speed * 3.6)} km/h)` : `on foot, ${this.player.gun.reloading > 0 ? 'reloading' : `${this.player.gun.ammo} rounds`}`}  |  ${this.traffic.cars.length} cars, ${this.peds.peds.length} people  |  ${this.look.label}`, this.player.inCar ? '↑/W gas   ↓/S brake + reverse   ←→/AD steer   Space handbrake   E get out   R restart   T settings   G scenery' : 'WASD/arrows walk   Shift run   Space or click shoot   E get in / take a car   M mission   R restart car');
+    snd.update({ inCar: this.player.inCar, speed: car.speed, vMax: CAR.vMax, throttle: inp.throttle ?? 0, sideSpeed: car.sideSpeed ?? 0, handbrake: !!inp.handbrake, walkSpeed: this.player.inCar ? 0 : this.player.walker.speed, sirenDistance: Infinity, dt });
+    this.hudText(`${this.player.inCar ? `${Math.round(car.speed * 2.23694)} mph (${Math.round(car.speed * 3.6)} km/h)` : 'on foot'}  |  ${this.traffic.cars.length} cars, ${this.peds.peds.length} people  |  ${this.look.label}`, this.player.inCar ? '↑/W gas   ↓/S brake + reverse   ←→/AD steer   Space handbrake   E get out   R restart   T settings   G scenery' : 'WASD/arrows walk   Shift run   E get in / swap cars   M mission   R restart car');
   }
 
-  /** arrested: a fine, the car and the stars are gone, back to the start */
-  busted() { this.respawn('BUSTED!  Fine', 0.2, 100, 'Your car is gone.'); }
-
-  /** killed: a hospital bill, back at the start in a new car */
-  wasted() { this.respawn('WASTED!  Hospital bill', 0.1, 50, 'New car at the start.'); }
+  /** the car is wrecked and the player was too close: a tow bill, a fresh car back at the start */
+  crashed() { this.respawn('Crashed hard!  Tow bill', 0.1, 50, 'New car at the start.'); }
 
   respawn(title, share, least, tail) {
     const m = this.missions, fine = Math.min(m.cash, Math.max(least, Math.round(m.cash * share)));
     m.cash -= fine; m.persist(); m.abandon();
     m.message = { text: `${title} $${fine}. ${tail}`, t: 6, bad: true };
-    this.police.reset();
     this.car.reset(this.start.x, this.start.y, this.start.heading); this.layers.reset(0);
-    this.carView.setModel(null); this.player.stolen = false; this.damage.reset(); this.wreck = false;
+    this.carView.setModel(null); this.player.swapped = false; this.damage.reset(); this.wreck = false;
     if (!this.player.inCar) this.player.enterCar();
     this.camX = this.car.x; this.camY = this.car.y;
   }
@@ -296,17 +286,17 @@ export class WorldScene extends Phaser.Scene {
     if (!this.wreck && d.update(dt)) this.explodeCar(me);
     this.carView.setDamage(d.level, this.wreck);
     this.fx.update(dt, car, d, !this.wreck);
-    // a paint shop: drive in slowly, pay, and the car is new and the police lose interest
+    // a paint shop: drive in slowly, pay, and the car is new
     this.sprayT = (this.sprayT ?? 0) - dt;
     const nearShop = this.player.inCar && this.sprays.some((s) => Math.hypot(car.x - s.x, car.y - s.y) <= 6);
     this.sprayHint = nearShop && !this.missions.message; // shown from updateMissions, so it never fights the mission text
     if (this.player.inCar && this.sprayT <= 0 && car.speed < 9) {
       for (const s of this.sprays) {
-        if (Math.hypot(car.x - s.x, car.y - s.y) > 6 || !(d.hp < 100 || this.police.wanted.stars > 0)) continue;
+        if (Math.hypot(car.x - s.x, car.y - s.y) > 6 || d.hp >= 100) continue;
         this.sprayT = 6;
         if (this.missions.cash >= 100) {
-          this.missions.cash -= 100; this.missions.persist(); d.repair(); this.police.reset();
-          this.missions.message = { text: 'Pay \'n\' Spray: as good as new, and nobody knows you.  -$100', t: 4, good: true };
+          this.missions.cash -= 100; this.missions.persist(); d.repair();
+          this.missions.message = { text: 'Pay \'n\' Spray: as good as new.  -$100', t: 4, good: true };
         } else this.missions.message = { text: 'Pay \'n\' Spray costs $100', t: 3, bad: true };
         break;
       }
@@ -317,10 +307,9 @@ export class WorldScene extends Phaser.Scene {
     const car = this.car, R = BLAST_RADIUS;
     this.fx.explode(car.x, car.y);
     this.sound.burst(0.9, 130, 1.0); this.sound.burst(0.8, 320, 0.6, 'sine');
-    if (this.pedsOn) for (const p of this.peds.peds) if (!p.dead && Math.hypot(p.x - car.x, p.y - car.y) < R) { this.peds.kill(p); this.player.corpses.push({ x: p.x, y: p.y, heading: p.heading, clothes: p.clothes, skin: p.skin, hair: p.id % 5, t: 0, img: null }); }
     for (const c of this.traffic.cars) if (!c.dead && Math.hypot(c.x - car.x, c.y - car.y) < R) c.dead = true;
     this.wreck = true;
-    if (Math.hypot(me.x - car.x, me.y - car.y) < 6.5) this.wasted();
+    if (Math.hypot(me.x - car.x, me.y - car.y) < 6.5) this.crashed();
   }
 
   /** missions: the phone to answer, the objective, the target marker, cash */
@@ -328,9 +317,9 @@ export class WorldScene extends Phaser.Scene {
     const m = this.missions, g = this.markers;
     if (Phaser.Input.Keyboard.JustDown(this.keyM)) {
       if (m.active) m.abandon();
-      else { const o = m.offerAt(me.x, me.y); if (o) m.start(o, { kills: this.player.kills }); }
+      else { const o = m.offerAt(me.x, me.y); if (o) m.start(o); }
     }
-    m.update(dt, { x: me.x, y: me.y, inCar: this.player.inCar, stolen: this.player.stolen && this.player.inCar, kills: this.player.kills });
+    m.update(dt, { x: me.x, y: me.y, inCar: this.player.inCar, swapped: this.player.swapped && this.player.inCar });
     g.clear();
     const t = this.time.now / 1000, pulse = 1 + 0.12 * Math.sin(t * 5);
     const ring = (x, y, r, color) => { g.lineStyle(0.5, color, 0.95); g.strokeCircle(x, y, r * pulse); g.fillStyle(color, 0.16); g.fillCircle(x, y, r * pulse); };
@@ -359,16 +348,14 @@ export class WorldScene extends Phaser.Scene {
       const dist = obj.target ? `${Math.round(Math.hypot(obj.target.x - me.x, obj.target.y - me.y))} m` : '';
       html = `<b>${obj.title}</b> (${obj.step}/${obj.steps}): ${obj.text}${dist ? `  ·  ${dist}` : ''}${obj.timeLeft !== null ? `  ·  ${Math.ceil(obj.timeLeft)} s` : ''}   <small>(M abandons)</small>`;
     } else if (offer && m.offerAt(me.x, me.y)) html = `<b>${offer.title}</b>: ${offer.brief}   <b>Press M to take the job</b>`;
-    else if (this.sprayHint) html = this.damage.hp < 100 || this.police.wanted.stars > 0 ? '<b>Pay \'n\' Spray</b>: slow down to $100 for a fresh coat and a clean sheet' : '<b>Pay \'n\' Spray</b> (green): nothing to fix right now';
+    else if (this.sprayHint) html = this.damage.hp < 100 ? '<b>Pay \'n\' Spray</b>: slow down to $100 for a fresh coat' : '<b>Pay \'n\' Spray</b> (green): nothing to fix right now';
     if (html !== this.missionHtml || cls !== this.missionCls) { this.missionHtml = html; this.missionCls = cls; el.innerHTML = html; el.className = cls; el.style.display = html ? 'block' : 'none'; }
-    const cash = `$${m.cash.toLocaleString('en-US')}`, stars = this.police.wanted.stars, hot = this.police.nearest < 70 && this.time.now % 600 < 300;
-    const starsKey = `${stars}${hot ? 'h' : ''}`;
+    const cash = `$${m.cash.toLocaleString('en-US')}`;
     const hp = Math.round(this.damage.hp) + (this.wreck ? 'w' : '');
-    if (cash !== this.cashShown || this.killsShown !== this.player.kills || starsKey !== this.starsShown || hp !== this.hpShown) {
-      this.cashShown = cash; this.killsShown = this.player.kills; this.starsShown = starsKey; this.hpShown = hp;
-      const star = stars ? `<small style="color:${hot ? '#ff6a5a' : '#ffd84a'};font-size:20px;letter-spacing:2px">${'★'.repeat(stars)}${'☆'.repeat(5 - stars)}</small>` : '';
+    if (cash !== this.cashShown || hp !== this.hpShown) {
+      this.cashShown = cash; this.hpShown = hp;
       const carLine = this.wreck ? '<small style="color:#ff6a5a">car destroyed</small>' : this.damage.hp < 100 ? `<small style="color:${this.damage.hp < 25 ? '#ff6a5a' : this.damage.hp < 55 ? '#ffb04a' : '#cfd5d9'}">car ${Math.round(this.damage.hp)}%</small>` : '';
-      this.scoreEl.innerHTML = `${cash}${star}${carLine}${this.player.kills ? `<small>${this.player.kills} down</small>` : ''}`;
+      this.scoreEl.innerHTML = `${cash}${carLine}`;
     }
   }
 

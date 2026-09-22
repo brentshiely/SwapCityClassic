@@ -19,7 +19,7 @@
     "roof-lean-city": "python3 tools/roof_lean_city.py",
     "package": "node scripts/package.mjs",
     "check-offline": "node tools/check_offline.mjs",
-    "test": "node tools/test_car.mjs && node tools/test_collision.mjs && node tools/test_traffic.mjs && node tools/test_peds.mjs && node tools/test_peds_city.mjs && node tools/test_navigation.mjs && node tools/test_perspective.mjs && node --expose-gc tools/test_city_scale.mjs && node tools/test_layers.mjs && node tools/test_speed.mjs && node tools/test_onfoot.mjs && node tools/test_missions.mjs && node tools/test_police.mjs && node tools/test_audio.mjs && node tools/test_damage.mjs && node tools/test_route.mjs"
+    "test": "node tools/test_car.mjs && node tools/test_collision.mjs && node tools/test_traffic.mjs && node tools/test_peds.mjs && node tools/test_peds_city.mjs && node tools/test_navigation.mjs && node tools/test_perspective.mjs && node --expose-gc tools/test_city_scale.mjs && node tools/test_layers.mjs && node tools/test_speed.mjs && node tools/test_onfoot.mjs && node tools/test_missions.mjs && node tools/test_audio.mjs && node tools/test_damage.mjs && node tools/test_route.mjs"
   },
   "dependencies": {
     "3d-tiles-renderer": "^0.5.3",

@@ -35,6 +35,14 @@
     #mission b { color: #ffd84a; }
     #mission.good { border: 1px solid #5fd48a; } #mission.bad { border: 1px solid #ff6a5a; }
     #prompt { position: fixed; left: 50%; bottom: 128px; transform: translateX(-50%); padding: 5px 12px; border-radius: 5px; background: rgba(14, 18, 20, 0.7); color: #fff; font: 13px Menlo, monospace; pointer-events: none; display: none; }
+    #intro { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(8, 10, 11, 0.82); font: 14px/1.5 Menlo, monospace; color: #dfe4e7; cursor: pointer; }
+    #intro .card { max-width: min(480px, 88vw); padding: 22px 26px; background: #14181a; border: 1px solid #38424a; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.55); cursor: default; }
+    #intro h1 { margin: 0 0 4px; font: 800 24px/1.2 "Arial Black", Arial, sans-serif; letter-spacing: .03em; color: #ffd24a; }
+    #intro p { margin: 0 0 12px; color: #b7c0c6; }
+    #intro .keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 16px; font-size: 12.5px; }
+    #intro .keys b { color: #f1f3f4; }
+    #intro .go { text-align: center; padding: 9px; border-radius: 7px; background: #26303a; color: #ffd24a; font-weight: bold; }
+    #intro .touch-note { margin: 0 0 12px; padding: 8px 10px; border-radius: 6px; background: rgba(255, 176, 74, 0.12); border: 1px solid rgba(255, 176, 74, 0.4); color: #ffb04a; font-size: 12.5px; }
   </style>
 </head>
 <body>
@@ -47,6 +55,32 @@
   <div id="prompt"></div>
   <pre id="hud"></pre>
   <p id="attrib">Map data &copy; OpenStreetMap contributors (ODbL)</p>
+  <div id="intro">
+    <div class="card">
+      <h1>SwapCityClassic</h1>
+      <p>A top-down driving game on the real streets of Minneapolis, MN &mdash; every road, block and building is the real place.</p>
+      <div id="introTouch" class="touch-note" hidden>This is built for a keyboard and mouse. On a phone or tablet there is no way to drive yet.</div>
+      <div class="keys">
+        <b>Arrows / WASD</b><span>drive</span>
+        <b>Space</b><span>handbrake</span>
+        <b>E</b><span>get out, get in, swap into a car</span>
+        <b>M</b><span>take or drop a mission</span>
+        <b>G</b><span>Google Earth view</span>
+        <b>T</b><span>settings</span>
+      </div>
+      <div class="go">Click or press any key to start</div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var el = document.getElementById('intro');
+      if (!window.matchMedia('(pointer: fine)').matches) document.getElementById('introTouch').hidden = false;
+      var go = function () { el.style.display = 'none'; document.removeEventListener('keydown', go); document.removeEventListener('pointerdown', pointerGo); };
+      var pointerGo = function (e) { if (el.contains(e.target)) go(); };
+      document.addEventListener('keydown', go);
+      el.addEventListener('pointerdown', pointerGo);
+    })();
+  </script>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

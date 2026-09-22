@@ -1,6 +1,6 @@
-import { engine, skid, crash, siren, stepsPerSecond, SHOT, MUSIC, midiHz } from './params.js';
+import { engine, skid, crash, siren, stepsPerSecond, MUSIC, midiHz } from './params.js';
 
-// Sound, all made in code (Web Audio): engine, tyre squeal, crashes, gunshots, footsteps, the police siren and a small music loop.
+// Sound, all made in code (Web Audio): engine, tyre squeal, crashes, footsteps, a siren (unused for now) and a small music loop.
 // Browsers only let a page make sound after the player has pressed a key or clicked, so the audio context is created on the first one.
 
 export class Sound {
@@ -37,7 +37,7 @@ export class Sound {
     this.sq = { n: noise(), bp: ctx.createBiquadFilter(), g: ctx.createGain() };
     this.sq.bp.type = 'bandpass'; this.sq.bp.frequency.value = 1500; this.sq.bp.Q.value = 6; this.sq.g.gain.value = 0;
     this.sq.n.connect(this.sq.bp); this.sq.bp.connect(this.sq.g); this.sq.g.connect(this.sfxBus);
-    // siren: a triangle wave swept up and down
+    // siren: a triangle wave swept up and down (nothing plays it yet, kept for a future ambulance or fire truck)
     this.si = { o: ctx.createOscillator(), lfo: ctx.createOscillator(), lg: ctx.createGain(), g: ctx.createGain() };
     this.si.o.type = 'triangle'; this.si.o.frequency.value = 900; this.si.lfo.frequency.value = 0.65; this.si.lg.gain.value = 330; this.si.g.gain.value = 0;
     this.si.lfo.connect(this.si.lg); this.si.lg.connect(this.si.o.frequency); this.si.o.connect(this.si.g); this.si.g.connect(this.sfxBus);
@@ -72,14 +72,12 @@ export class Sound {
     g.connect(this.sfxBus);
   }
 
-  shot() { this.burst(SHOT.gain, SHOT.freq, 0.16); this.burst(SHOT.gain * 0.5, 140, 0.12, 'sine'); }
   crashHit(speedLost) { const c = crash(speedLost); if (c) { this.burst(c.gain * c.noise, c.freq * 6, 0.35); this.burst(c.gain, c.freq, 0.3, 'sine'); } }
   step() { this.burst(0.06, 260, 0.05); }
-  scream() { this.burst(0.2, 900, 0.45, 'triangle'); }
   horn() { this.burst(0.25, 420, 0.5, 'square'); }
 
   /**
-   * every frame. s = { inCar, speed, vMax, throttle, sideSpeed, handbrake, walkSpeed, policeDistance, dt }
+   * every frame. s = { inCar, speed, vMax, throttle, sideSpeed, handbrake, walkSpeed, sirenDistance, dt }
    */
   update(s) {
     const ctx = this.ctx; if (!ctx) return;
@@ -91,7 +89,7 @@ export class Sound {
     this.road.g.gain.setTargetAtTime(e.roar, t, 0.1); this.road.lp.frequency.setTargetAtTime(300 + s.speed * 30, t, 0.1);
     this.sq.g.gain.setTargetAtTime(s.inCar ? skid(s.sideSpeed, s.speed, s.handbrake) : 0, t, 0.04);
     this.sq.bp.frequency.setTargetAtTime(1300 + Math.min(1400, s.speed * 45), t, 0.05);
-    this.si.g.gain.setTargetAtTime(siren(s.policeDistance), t, 0.15);
+    this.si.g.gain.setTargetAtTime(siren(s.sirenDistance), t, 0.15);
     // footsteps
     const sps = s.inCar ? 0 : stepsPerSecond(s.walkSpeed);
     this.stepT -= s.dt;

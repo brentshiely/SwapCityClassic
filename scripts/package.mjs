@@ -17,6 +17,7 @@ writeFileSync('release/HOW TO PLAY.txt', `SwapCityClassic - how to play (works w
    to take a job (a pink ring and arrow show where to go); M again abandons it. Cash and finished jobs are remembered.
    Crimes (shooting, killing, taking a car) earn stars; police cars chase you; if they catch you standing still you are BUSTED (a fine,
    your car is gone, back to the start). Lose them for a while and the stars fade.
+   A pink line over the streets shows the way to your current mission objective (turn it off in the T panel if you'd rather find it yourself).
    The round radar (bottom left) shows where to go: pink is your objective (an arrow on the rim if it is far), yellow a job phone,
    green a paint shop, flashing red/blue the police.
    Crashes damage the car (smoke, then fire, then it explodes; the health is under your cash); a green ring is a Pay 'n' Spray

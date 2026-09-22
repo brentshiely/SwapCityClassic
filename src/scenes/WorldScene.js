@@ -23,6 +23,7 @@ import { PedView } from '../peds/pedView.js';
 import { findStart } from '../world/start.js';
 import { PlayerController } from '../player/playerController.js';
 import { MissionManager, resolveSpot } from '../missions/missions.js';
+import { RouteView } from '../ui/routeView.js';
 import { PoliceManager } from '../police/police.js';
 import { Sound } from '../audio/sound.js';
 import { Radar } from '../ui/radar.js';
@@ -111,6 +112,7 @@ export class WorldScene extends Phaser.Scene {
     this.sound = new Sound(); // made in code; starts on the first key or click
     this.keyX = this.input.keyboard.addKey('X'); this.keyN = this.input.keyboard.addKey('N'); this.keyH = this.input.keyboard.addKey('H');
     this.radar = new Radar(this.world);
+    this.routeView = new RouteView(this, this.world); // a coloured line over the streets to the current objective
     this.damage = new CarDamage(); this.fx = new CarFx(this); this.wreck = false;
     this.sprays = ['South 9th Street|-100,170', '2nd Avenue South|130,-60'].map((k) => { const [street, n] = k.split('|'); return resolveSpot(this.world, { street, near: n.split(',').map(Number) }); }).filter(Boolean); // paint shops
     this.police = new PoliceManager(this.traffic); // crimes raise the wanted level; police cars chase (traffic cars with `police` set)
@@ -347,6 +349,8 @@ export class WorldScene extends Phaser.Scene {
         g.fillTriangle(ax + Math.cos(a) * 1.6, ay + Math.sin(a) * 1.6, ax + Math.cos(a + 2.5) * 1.1, ay + Math.sin(a + 2.5) * 1.1, ax + Math.cos(a - 2.5) * 1.1, ay + Math.sin(a - 2.5) * 1.1);
       }
     }
+    if (this.settings.routeLine !== 'off') this.routeView.update(dt, me.x, me.y, obj?.target ?? null);
+    else if (this.routeView.route) this.routeView.update(dt, me.x, me.y, null);
     // words
     const el = this.missionEl;
     let html = '', cls = '';

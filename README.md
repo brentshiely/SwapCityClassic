@@ -62,6 +62,14 @@ The pistol (`weapon.js`, Space or click, aim with the mouse) is a hitscan shot: 
 graph. Yellow rings are the phones (M to take the job), pink is the target. Cash and finished jobs are kept in localStorage.
 Tests: `tools/test_onfoot.mjs`, `tools/test_missions.mjs`.
 
+## Route guidance
+
+`src/navigation/route.js`: an A* shortest-path over the road graph (a binary heap, so it costs the same at city scale: about
+5 ms for an 8 km cross-city route on a synthetic 40x40-block city), honouring one-way streets. `src/ui/routeView.js` draws it as a
+glowing pink line laid over the streets to the current mission target, with arrowheads showing the direction, recomputed only when
+the driver strays more than 35 m off it, the target moves, or 4 seconds pass — never every frame. The T panel's "Route to objective"
+turns it off. Test: `tools/test_route.mjs`.
+
 ## Radar and street names
 
 `src/ui/radar.js`: a round north-up radar (bottom left, 380 m range) with the streets (freeways in gold) and water, the player as a white arrow,

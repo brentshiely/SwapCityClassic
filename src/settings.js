@@ -5,13 +5,14 @@ export const DEFAULTS = {
   look: 'auto', streets: 'on', overhead: 'on',
   zoomNear: 20, zoomFar: 12, lookahead: 0.45,
   vMax: 67, accel: 7.5, grip: 9, handbrakeGrip: 1.3, turnMax: 2.6,
-  camHeight: 300, cars: 16, peds: 80, sfx: 0.8, music: 0.35,
+  camHeight: 300, cars: 16, peds: 80, sfx: 0.8, music: 0.35, routeLine: 'on',
 };
 
 export const SPEC = [
   { group: 'Look', items: [
     { key: 'look', type: 'choice', label: 'Scenery', options: [['auto', 'Auto: Google Earth when online'], ['google', 'Google Earth (live)'], ['offline', 'Offline (LiDAR heights)']], hint: 'G flips it. Google streams live, needs internet.' },
     { key: 'streets', type: 'choice', label: 'Our streets over Google', options: [['on', 'On: our roads, no photographed cars'], ['off', 'Off: Google\'s own roads']], hint: 'Only matters while Google shows.' },
+    { key: 'routeLine', type: 'choice', label: 'Route to objective', options: [['on', 'On: a pink line over the streets'], ['off', 'Off']], hint: 'Shows the way to a mission objective.' },
     { key: 'overhead', type: 'choice', label: 'Google overhead above cars', options: [['on', 'On: signals, wires, signs, skyways pass over cars'], ['off', 'Off: cars always on top (our skyway blocks)']], hint: 'Only matters while Google shows.' },
   ] },
   { group: 'Camera', items: [

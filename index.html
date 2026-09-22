@@ -39,9 +39,25 @@
     #intro .card { max-width: min(480px, 88vw); padding: 22px 26px; background: #14181a; border: 1px solid #38424a; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.55); cursor: default; }
     #intro h1 { margin: 0 0 4px; font: 800 24px/1.2 "Arial Black", Arial, sans-serif; letter-spacing: .03em; color: #ffd24a; }
     #intro p { margin: 0 0 12px; color: #b7c0c6; }
+    #intro .story { color: #93b8c9; font-size: 12.5px; }
+    #intro details.techdetails { margin: 0 0 14px; font-size: 12px; }
+    #intro details.techdetails summary { cursor: pointer; color: #7fb3c9; list-style: none; }
+    #intro details.techdetails summary::-webkit-details-marker { display: none; }
+    #intro details.techdetails summary::before { content: '▸ '; }
+    #intro details.techdetails[open] summary::before { content: '▾ '; }
+    #intro details.techdetails .techbody { margin-top: 8px; max-height: 220px; overflow-y: auto; padding-right: 6px; }
+    #intro details.techdetails .techbody p { margin: 0 0 8px; color: #9aa4aa; }
+    #intro details.techdetails b { color: #cdd5da; }
+    #intro details.techdetails code { background: #0e1113; padding: 1px 4px; border-radius: 3px; color: #9fb0ba; }
+    #intro .city-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 14px; font-size: 12.5px; }
+    #intro .city-row select { flex: 1; max-width: 220px; padding: 4px 6px; font: inherit; background: #26303a; color: #dfe4e7; border: 1px solid #45525d; border-radius: 5px; }
     #intro .keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 16px; font-size: 12.5px; }
     #intro .keys b { color: #f1f3f4; }
-    #intro .go { text-align: center; padding: 9px; border-radius: 7px; background: #26303a; color: #ffd24a; font-weight: bold; }
+    #intro .loadbar { height: 7px; border-radius: 4px; background: #232c33; overflow: hidden; margin: 2px 0 6px; }
+    #intro .loadbar-fill { height: 100%; width: 0%; background: #ffd24a; transition: width .2s ease; }
+    #intro .loadstatus { text-align: right; font-size: 11px; color: #8a959c; margin: 0 0 12px; }
+    #intro .go { text-align: center; padding: 9px; border-radius: 7px; background: #26303a; color: #6b757c; font-weight: bold; transition: color .2s ease; }
+    #intro .go.ready { color: #ffd24a; }
     #intro .touch-note { margin: 0 0 12px; padding: 8px 10px; border-radius: 6px; background: rgba(255, 176, 74, 0.12); border: 1px solid rgba(255, 176, 74, 0.4); color: #ffb04a; font-size: 12.5px; }
   </style>
 </head>
@@ -59,6 +75,33 @@
     <div class="card">
       <h1>SwapCityClassic</h1>
       <p>A top-down driving game on the real streets of Minneapolis, MN &mdash; every road, block and building is the real place.</p>
+      <p class="story">Built by Brent Shiely and Claude Code in under 14 hours of actual engineering time (spread across
+        Sept 20&ndash;22, 2026, around the usual downtime): real OpenStreetMap road and building data for the whole city,
+        real building heights measured from LiDAR, and a live street network you can actually drive &mdash; sharing it with
+        about 80 pedestrians and 16 traffic cars, in a browser, at a smooth frame rate.</p>
+      <div class="city-row">
+        <label for="citySelect">City</label>
+        <select id="citySelect" disabled><option value="minneapolis" selected>Minneapolis, MN</option></select>
+      </div>
+      <details class="techdetails">
+        <summary>Technical details</summary>
+        <div class="techbody">
+          <p><b>Engine</b>: Phaser 3.90 (2D WebGL/Canvas) for rendering, the camera and input; Three.js + 3d-tiles-renderer
+            for the optional live Google Photorealistic 3D Tiles layer.</p>
+          <p><b>Build</b>: Vite 8 + vite-plugin-singlefile. The offline release packs the whole game and city into one
+            self-contained HTML file that runs with no server and no internet; the online build streams city tiles as you drive.</p>
+          <p><b>Map &amp; imagery data</b>: road network and building footprints from OpenStreetMap via the Overpass API
+            (&copy; OpenStreetMap contributors, ODbL); building heights from USGS 3DEP LiDAR (public domain); roof photos
+            from USGS NAIP aerial imagery (public domain); Google's Photorealistic 3D Tiles API as an optional live online
+            layer only &mdash; never cached or used offline, per its terms.</p>
+          <p><b>Scale</b>: 162,066 buildings citywide (162,064 with real LiDAR-measured heights), 16,762 roads, 11,721
+            road-graph nodes, about 4,800 roof-photo tiles &mdash; the whole city of Minneapolis, MN.</p>
+          <p><b>Everything else</b>: traffic, pedestrians, driving physics, collision, A* route-finding, sound and the
+            rendering pipeline are hand-written JavaScript &mdash; no game-asset packages, no physics engine. 15 automated
+            test suites (<code>npm test</code>) cover it.</p>
+          <p><b>Hosting</b>: static hosting on Cloudflare Pages.</p>
+        </div>
+      </details>
       <div id="introTouch" class="touch-note" hidden>This is built for a keyboard and mouse. On a phone or tablet there is no way to drive yet.</div>
       <div class="keys">
         <b>Arrows / WASD</b><span>drive</span>
@@ -68,16 +111,57 @@
         <b>G</b><span>Google Earth view</span>
         <b>T</b><span>settings</span>
       </div>
-      <div class="go">Click or press any key to start</div>
+      <div class="loadbar"><div class="loadbar-fill" id="loadFill"></div></div>
+      <div class="loadstatus" id="loadStatus">Loading&hellip; 0%</div>
+      <div class="go" id="introGo">Loading&hellip;</div>
     </div>
   </div>
   <script>
     (function () {
       var el = document.getElementById('intro');
+      var fill = document.getElementById('loadFill');
+      var status = document.getElementById('loadStatus');
+      var goEl = document.getElementById('introGo');
       if (!window.matchMedia('(pointer: fine)').matches) document.getElementById('introTouch').hidden = false;
-      var go = function () { el.style.display = 'none'; document.removeEventListener('keydown', go); document.removeEventListener('pointerdown', pointerGo); };
-      var pointerGo = function (e) { if (el.contains(e.target)) go(); };
-      document.addEventListener('keydown', go);
+
+      var shownAt = performance.now();
+      var MIN_MS = 5000; // the splash stays up at least this long, even on a fast, cached load
+      var pct = 0, ready = false;
+
+      function paint() {
+        fill.style.width = pct + '%';
+        var elapsed = performance.now() - shownAt;
+        var canGo = ready && elapsed >= MIN_MS;
+        status.textContent = ready ? 'Ready' : ('Loading… ' + pct + '%');
+        goEl.textContent = canGo ? 'Click or press any key to start' : (ready ? 'Just a moment…' : 'Loading…');
+        goEl.classList.toggle('ready', canGo);
+      }
+      paint();
+      var timer = setInterval(paint, 150);
+
+      // main.js calls this as the city data and the streets around the start point actually load, in the background
+      window.__setLoadProgress = function (p) {
+        pct = Math.max(0, Math.min(100, Math.round(p)));
+        if (pct >= 100) ready = true;
+        paint();
+      };
+
+      var go = function () {
+        if (!ready || performance.now() - shownAt < MIN_MS) return;
+        clearInterval(timer);
+        el.style.display = 'none';
+        document.removeEventListener('keydown', go);
+        el.removeEventListener('pointerdown', pointerGo);
+      };
+      var pointerGo = function (e) {
+        if (!el.contains(e.target) || e.target.closest('select') || e.target.closest('details')) return;
+        go();
+      };
+      document.addEventListener('keydown', function (e) {
+        var a = document.activeElement;
+        if (a && (a.id === 'citySelect' || a.closest('details'))) return;
+        go(e);
+      });
       el.addEventListener('pointerdown', pointerGo);
     })();
   </script>

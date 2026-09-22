@@ -31,35 +31,43 @@ function whenSized(go) {
 
 // The city: the road graph and city limit (city.json) load first; the tiles around the start are ready before the game begins.
 const CITY = 'city'; // served at /city/ (see vite.config.js); the tiles are fetched from there as the car drives
-async function loadCity() {
+// report(pct, label) tells the splash screen (index.html) how far real loading has gotten, so its progress bar means something.
+async function loadCity(report) {
   let city, source;
+  report?.(5, 'city data');
   if (__EMBED_CITY__) { // the single-file offline build carries the downtown data inside
     ({ city, source } = (await import('./embeddedCity.js')).embeddedCity());
+    report?.(50, 'city data');
   } else {
     const r = await fetch(`${CITY}/city.json`);
     if (!r.ok) throw new Error(`could not load ${CITY}/city.json (${r.status})`);
     city = await r.json();
+    report?.(20, 'roads and buildings');
     const rr = await fetch(`${CITY}/roofs.json`).catch(() => null); // roof photos per tile, if the city was baked with them
     const roofs = rr && rr.ok ? await rr.json().catch(() => null) : null;
     city.meta.roofPhotos = roofs;
+    report?.(30, 'roof photos');
     const wr = await fetch(`${CITY}/water.json`).catch(() => null); // rivers and lakes, if the city was baked with them
     city.water = wr && wr.ok ? ((await wr.json().catch(() => null))?.polygons ?? []) : [];
     const tr = await fetch(`${CITY}/terrain.json`).catch(() => null); // ground height (downtown), used by Google mode
     city.terrain = tr && tr.ok ? await tr.json().catch(() => null) : null;
+    report?.(40, 'terrain');
     const lr = roofs ? await fetch(`${CITY}/roof_lean.json`).catch(() => null) : null; // the lean per region, once LiDAR has measured it
     city.meta.roofLean = lr && lr.ok ? await lr.json().catch(() => null) : null;
+    report?.(50, 'terrain');
     source = fetchSource(CITY, roofs);
   }
   const world = new World(city, source);
   const start = findStart(world);
-  await world.preload(start.x, start.y);
+  await world.preload(start.x, start.y, (done, total) => report?.(50 + Math.round((done / total) * 50), 'streets near you'));
+  report?.(100, 'ready');
   return world;
 }
 
 // Exposed so the game can be inspected and driven from the browser console while testing.
 whenSized(async () => {
   let world;
-  try { world = await loadCity(); } catch (e) {
+  try { world = await loadCity((pct, label) => window.__setLoadProgress?.(pct, label)); } catch (e) {
     document.body.insertAdjacentHTML('beforeend', `<div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#14181a;color:#e8ecee;font:16px Menlo,monospace;text-align:center;padding:24px;z-index:99">Could not load the city data: ${e.message}</div>`);
     return;
   }

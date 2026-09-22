@@ -171,14 +171,19 @@ export class World {
     this.queue.push(tile);
   }
 
-  /** tiles are loaded synchronously from a ready source (Node tests, the starting area): fill the whole ring at once */
-  async preload(x, y) {
-    const [cx, cy] = this.tileOf(x, y), R = this.loadRadius, jobs = [];
-    for (let dx = -R; dx <= R; dx++) for (let dy = -R; dy <= R; dy++) {
-      const tx = cx + dx, ty = cy + dy, k = this.key(tx, ty), t = this.meta.tiles;
-      if (this.tiles.has(k)) continue;
-      if (t && (tx < t.minTx || tx > t.maxTx || ty < t.minTy || ty > t.maxTy)) { this.accept(tx, ty, null); continue; }
-      jobs.push(Promise.resolve(this.source(tx, ty)).then((d) => this.accept(tx, ty, d), () => this.accept(tx, ty, null)));
+  /** tiles are loaded synchronously from a ready source (Node tests, the starting area): fill the whole ring at once.
+   *  onProgress(done, total), if given, is called as each tile in the ring is accounted for (loaded or skipped). */
+  async preload(x, y, onProgress) {
+    const [cx, cy] = this.tileOf(x, y), R = this.loadRadius, jobs = [], cells = [];
+    for (let dx = -R; dx <= R; dx++) for (let dy = -R; dy <= R; dy++) cells.push([cx + dx, cy + dy]);
+    const total = cells.length;
+    let done = 0;
+    const tick = () => onProgress?.(++done, total);
+    for (const [tx, ty] of cells) {
+      const k = this.key(tx, ty), t = this.meta.tiles;
+      if (this.tiles.has(k)) { tick(); continue; }
+      if (t && (tx < t.minTx || tx > t.maxTx || ty < t.minTy || ty > t.maxTy)) { this.accept(tx, ty, null); tick(); continue; }
+      jobs.push(Promise.resolve(this.source(tx, ty)).then((d) => this.accept(tx, ty, d), () => this.accept(tx, ty, null)).then(tick));
     }
     await Promise.all(jobs);
     while (this.queue.length) { const tile = this.queue.shift(); tile.announced = true; this.stats.loaded++; for (const f of this.onLoad) f(tile); }

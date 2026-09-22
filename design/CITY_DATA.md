@@ -164,3 +164,14 @@ Deviations and things the engine must know:
   x = 0..1500 strip about (-0.05, 0), at x = 1500..3000 (University of Minnesota / Stadium Village) it flips to (+0.07, -0.09): a roof 50 m high sits 3.5 m east and 4.5 m north of its footprint there, 8 m west
   and 2 m south downtown. The steps between cells are the seams of the NAIP flight frames, so a single global model (or the old downtown fit extrapolated) is wrong by up to 0.24 m per metre of height
   (12 m on a 50 m building) across the city. Montages (/tmp/sc/lean_{i}_{j}.png) show the shifted outlines sitting on the roofs in the regions checked.
+
+
+## Status: complete (2026-09-22)
+
+The city-wide LiDAR download finished: 661 files, 67.2 GB. All three steps ran automatically (finish.sh):
+- **Heights:** 162,064 of 162,066 buildings measured from LiDAR (was 10,434 interim). 137 stepped buildings, 378 blocks.
+  Height distribution: median 7.4 m, p90 15.1 m, p99 21.2 m, tallest IDS Center-area tower 280.3 m (a radio mast, likely not a building --
+  worth a look later). Against 81 buildings with an explicit OSM height >= 8 m: 79% within 10%, median relative difference -0.6%.
+- **Roof lean:** the full per-region table (30 cells + fallback), replacing the interim 23-cell one.
+- **Bake:** re-run with the final heights; roads 16,762 pieces, 956 named from route numbers, buildings 162,066 kept, all 2,222
+  roof-photo tiles survived (46 KB biggest, 45.2 MB total).

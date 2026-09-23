@@ -81,7 +81,7 @@
         about 80 pedestrians and 16 traffic cars, in a browser, at a smooth frame rate.</p>
       <div class="city-row">
         <label for="citySelect">City</label>
-        <select id="citySelect" disabled><option value="minneapolis" selected>Minneapolis, MN</option></select>
+        <select id="citySelect"><option value="minneapolis">Minneapolis, MN</option></select>
       </div>
       <details class="techdetails">
         <summary>Technical details</summary>
@@ -122,7 +122,27 @@
       var fill = document.getElementById('loadFill');
       var status = document.getElementById('loadStatus');
       var goEl = document.getElementById('introGo');
+      var citySelect = document.getElementById('citySelect');
       if (!window.matchMedia('(pointer: fine)').matches) document.getElementById('introTouch').hidden = false;
+
+      // Other cities (tools/add_city.mjs) list themselves in city/manifest.json; Minneapolis is always the built-in first
+      // option. Picking a different one saves the choice and reloads, so main.js starts the fresh load with it.
+      try {
+        var savedCity = localStorage.getItem('swapcity.city') || 'minneapolis';
+        citySelect.value = savedCity;
+      } catch { /* private browsing: default to Minneapolis */ }
+      fetch('city/manifest.json').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }).then(function (cities) {
+        for (var i = 0; i < cities.length; i++) {
+          var opt = document.createElement('option');
+          opt.value = cities[i].slug; opt.textContent = cities[i].label;
+          citySelect.appendChild(opt);
+        }
+        try { citySelect.value = localStorage.getItem('swapcity.city') || 'minneapolis'; } catch { /* default stays selected */ }
+      });
+      citySelect.addEventListener('change', function () {
+        try { localStorage.setItem('swapcity.city', citySelect.value); } catch { /* private browsing: the reload will just default back */ }
+        location.reload();
+      });
 
       var shownAt = performance.now();
       var MIN_MS = 5000; // the splash stays up at least this long, even on a fast, cached load

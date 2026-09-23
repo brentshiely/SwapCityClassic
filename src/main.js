@@ -30,12 +30,15 @@ function whenSized(go) {
 }
 
 // The city: the road graph and city limit (city.json) load first; the tiles around the start are ready before the game begins.
-const CITY = 'city'; // served at /city/ (see vite.config.js); the tiles are fetched from there as the car drives
+// Minneapolis lives at /city/; other cities (tools/add_city.mjs) live at /city/<slug>/ (see vite.config.js and the splash
+// screen's city menu in index.html, which saves the choice to localStorage before the page reloads to load it).
+const CITY_SLUG = __EMBED_CITY__ ? 'minneapolis' : (localStorage.getItem('swapcity.city') || 'minneapolis');
+const CITY = CITY_SLUG === 'minneapolis' ? 'city' : `city/${CITY_SLUG}`;
 // report(pct, label) tells the splash screen (index.html) how far real loading has gotten, so its progress bar means something.
 async function loadCity(report) {
   let city, source;
   report?.(5, 'city data');
-  if (__EMBED_CITY__) { // the single-file offline build carries the downtown data inside
+  if (__EMBED_CITY__) { // the single-file offline build carries the downtown data inside (Minneapolis only)
     ({ city, source } = (await import('./embeddedCity.js')).embeddedCity());
     report?.(50, 'city data');
   } else {

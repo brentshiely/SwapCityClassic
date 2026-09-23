@@ -35,7 +35,10 @@
     #mission b { color: #ffd84a; }
     #mission.good { border: 1px solid #5fd48a; } #mission.bad { border: 1px solid #ff6a5a; }
     #prompt { position: fixed; left: 50%; bottom: 128px; transform: translateX(-50%); padding: 5px 12px; border-radius: 5px; background: rgba(14, 18, 20, 0.7); color: #fff; font: 13px Menlo, monospace; pointer-events: none; display: none; }
-    #intro { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(8, 10, 11, 0.82); font: 14px/1.5 Menlo, monospace; color: #dfe4e7; cursor: pointer; }
+    /* align-items: safe center (the second declaration) keeps the card scrollable instead of clipped when it is taller
+       than the screen -- a short phone with the technical-details panel open, say. Older browsers that don't understand
+       "safe center" simply keep the plain "center" above it. */
+    #intro { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; align-items: safe center; justify-content: center; overflow-y: auto; padding-block: 20px; box-sizing: border-box; background: rgba(8, 10, 11, 0.82); font: 14px/1.5 Menlo, monospace; color: #dfe4e7; cursor: pointer; }
     #intro .card { max-width: min(480px, 88vw); padding: 22px 26px; background: #14181a; border: 1px solid #38424a; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.55); cursor: default; }
     #intro h1 { margin: 0 0 4px; font: 800 24px/1.2 "Arial Black", Arial, sans-serif; letter-spacing: .03em; color: #ffd24a; }
     #intro p { margin: 0 0 12px; color: #b7c0c6; }
@@ -59,6 +62,23 @@
     #intro .go { text-align: center; padding: 9px; border-radius: 7px; background: #26303a; color: #6b757c; font-weight: bold; transition: color .2s ease; }
     #intro .go.ready { color: #ffd24a; }
     #intro .touch-note { margin: 0 0 12px; padding: 8px 10px; border-radius: 6px; background: rgba(255, 176, 74, 0.12); border: 1px solid rgba(255, 176, 74, 0.4); color: #ffb04a; font-size: 12.5px; }
+
+    /* On-screen driving controls: shown only on a touch/coarse-pointer device (see the script below), sitting below the
+       #intro overlay's z-index so the main menu still captures all input while it is open. */
+    .tpad { position: fixed; z-index: 20; display: none; }
+    body.touch .tpad { display: flex; }
+    .tbtn { display: flex; align-items: center; justify-content: center; width: 58px; height: 58px; border-radius: 14px; background: rgba(20, 24, 26, 0.55); border: 1px solid rgba(255, 255, 255, 0.28); color: #f1f3f4; font: 700 13px/1 "Arial Black", Arial, sans-serif; letter-spacing: .02em; -webkit-user-select: none; user-select: none; touch-action: none; -webkit-touch-callout: none; }
+    .tbtn.on { background: rgba(255, 210, 74, 0.4); border-color: #ffd24a; }
+    /* Stacked bottom-left, lowest to highest: the radar (drawn by src/ui/radar.js, 176px tall from 64px up), the
+       steering pair right above it, then the E/M/menu row above that -- everything reachable by the same thumb,
+       clear of the compass/street-name banner at the top of the screen. */
+    #tpadSteer { left: 14px; bottom: calc(250px + env(safe-area-inset-bottom, 0px)); gap: 10px; }
+    #tpadSteer .tbtn { font-size: 22px; }
+    #tpadDrive { right: 14px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); gap: 10px; align-items: flex-end; }
+    #tpadDrive .tbtn.gas { width: 74px; height: 74px; border-radius: 50%; font-size: 14px; }
+    #tpadDrive .tbtn.brake { width: 60px; height: 60px; border-radius: 50%; font-size: 11px; align-self: flex-end; }
+    #tpadActions { left: 14px; bottom: calc(318px + env(safe-area-inset-bottom, 0px)); gap: 8px; }
+    #tpadActions .tbtn { width: 46px; height: 46px; border-radius: 10px; font-size: 11px; }
   </style>
 </head>
 <body>
@@ -71,6 +91,19 @@
   <div id="prompt"></div>
   <pre id="hud"></pre>
   <p id="attrib">Map data &copy; OpenStreetMap contributors (ODbL)</p>
+  <div id="tpadSteer" class="tpad">
+    <button type="button" class="tbtn" data-key="ArrowLeft:37">&#9664;</button>
+    <button type="button" class="tbtn" data-key="ArrowRight:39">&#9654;</button>
+  </div>
+  <div id="tpadDrive" class="tpad">
+    <button type="button" class="tbtn brake" data-key="ArrowDown:40">BRAKE</button>
+    <button type="button" class="tbtn gas" data-key="ArrowUp:38">GAS</button>
+  </div>
+  <div id="tpadActions" class="tpad">
+    <button type="button" class="tbtn" data-tap="KeyE:69">E</button>
+    <button type="button" class="tbtn" data-tap="KeyM:77">M</button>
+    <button type="button" class="tbtn" data-tap="Escape:27">&#9776;</button>
+  </div>
   <div id="intro">
     <div class="card">
       <h1>SwapCityClassic</h1>
@@ -105,7 +138,7 @@
           <p><b>Hosting</b>: static hosting on Cloudflare Pages.</p>
         </div>
       </details>
-      <div id="introTouch" class="touch-note" hidden>This is built for a keyboard and mouse. On a phone or tablet there is no way to drive yet.</div>
+      <div id="introTouch" class="touch-note" hidden>This plays best on a larger screen with a keyboard, but on-screen controls appear at the bottom of the screen so you can drive here too.</div>
       <div class="keys">
         <b>Arrows / WASD</b><span>drive</span>
         <b>Space</b><span>handbrake</span>
@@ -208,6 +241,37 @@
         open = true;
         el.style.display = 'flex';
         pauseGame(true);
+      });
+    })();
+  </script>
+  <script>
+    // On-screen driving controls for touch devices: each button dispatches the exact same KeyboardEvent a real key
+    // press would (code + legacy keyCode/which, since Phaser's keyboard plugin still keys off the numeric code), so
+    // none of the game or input code needs to know touch controls exist at all -- it just sees key presses.
+    (function () {
+      var coarse = !window.matchMedia('(pointer: fine)').matches;
+      if (coarse) document.body.classList.add('touch');
+
+      function fire(type, code, keyCode) {
+        window.dispatchEvent(new KeyboardEvent(type, { code: code, key: code, keyCode: keyCode, which: keyCode, bubbles: true }));
+      }
+      // A driving key: down while held, up on release (also if the finger slides off the button or the touch is cancelled).
+      document.querySelectorAll('[data-key]').forEach(function (btn) {
+        var parts = btn.getAttribute('data-key').split(':'), code = parts[0], keyCode = Number(parts[1]), held = false;
+        var down = function (e) { e.preventDefault(); if (held) return; held = true; btn.classList.add('on'); fire('keydown', code, keyCode); };
+        var up = function (e) { if (e) e.preventDefault(); if (!held) return; held = false; btn.classList.remove('on'); fire('keyup', code, keyCode); };
+        btn.addEventListener('pointerdown', down);
+        ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (t) { btn.addEventListener(t, up); });
+      });
+      // A one-shot action key (E, M, the menu): a quick down/up pulse, same as a real tap of the key.
+      document.querySelectorAll('[data-tap]').forEach(function (btn) {
+        var parts = btn.getAttribute('data-tap').split(':'), code = parts[0], keyCode = Number(parts[1]);
+        btn.addEventListener('pointerdown', function (e) {
+          e.preventDefault();
+          btn.classList.add('on');
+          fire('keydown', code, keyCode);
+          setTimeout(function () { btn.classList.remove('on'); fire('keyup', code, keyCode); }, 60);
+        });
       });
     })();
   </script>

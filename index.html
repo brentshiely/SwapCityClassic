@@ -74,11 +74,11 @@
   <div id="intro">
     <div class="card">
       <h1>SwapCityClassic</h1>
-      <p>A top-down driving game on the real streets of Minneapolis, MN &mdash; every road, block and building is the real place.</p>
+      <p>A top-down driving game on real city streets, picked from the menu below &mdash; every road, block and building is the real place.</p>
       <p class="story">Built by Brent Shiely and Claude Code in under 14 hours of actual engineering time (spread across
-        Sept 20&ndash;22, 2026, around the usual downtime): real OpenStreetMap road and building data for the whole city,
-        real building heights measured from LiDAR, and a live street network you can actually drive &mdash; sharing it with
-        about 80 pedestrians and 16 traffic cars, in a browser, at a smooth frame rate.</p>
+        Sept 20&ndash;23, 2026, around the usual downtime): real OpenStreetMap road and building data, Minneapolis at
+        full-city scale with real building heights measured from LiDAR<span id="extraCityBlurb">.</span> Every city here is a
+        live street network shared with about 80 pedestrians and 16 traffic cars, in a browser, at a smooth frame rate.</p>
       <div class="city-row">
         <label for="citySelect">City</label>
         <select id="citySelect"><option value="minneapolis">Minneapolis, MN</option></select>
@@ -94,8 +94,11 @@
             (&copy; OpenStreetMap contributors, ODbL); building heights from USGS 3DEP LiDAR (public domain); roof photos
             from USGS NAIP aerial imagery (public domain); Google's Photorealistic 3D Tiles API as an optional live online
             layer only &mdash; never cached or used offline, per its terms.</p>
-          <p><b>Scale</b>: 162,066 buildings citywide (162,064 with real LiDAR-measured heights), 16,762 roads, 11,721
-            road-graph nodes, about 4,800 roof-photo tiles &mdash; the whole city of Minneapolis, MN.</p>
+          <p><b>Scale</b>: Minneapolis, MN is the flagship at full-city scale &mdash; 162,066 buildings (162,064 with real
+            LiDAR-measured heights), 16,762 roads, 11,721 road-graph nodes, about 4,800 roof-photo tiles. Every other city
+            in the menu is a 1-mile-radius excerpt around its centre, on the same engine, without LiDAR heights or roof
+            photos (both Minneapolis-only data sources) &mdash; their buildings use OpenStreetMap's own height tags, or a
+            guess where OSM has none.</p>
           <p><b>Everything else</b>: traffic, pedestrians, driving physics, collision, A* route-finding, sound and the
             rendering pipeline are hand-written JavaScript &mdash; no game-asset packages, no physics engine. 15 automated
             test suites (<code>npm test</code>) cover it.</p>
@@ -110,6 +113,7 @@
         <b>M</b><span>take or drop a mission</span>
         <b>G</b><span>Google Earth view</span>
         <b>T</b><span>settings</span>
+        <b>Esc</b><span>menu / change city</span>
       </div>
       <div class="loadbar"><div class="loadbar-fill" id="loadFill"></div></div>
       <div class="loadstatus" id="loadStatus">Loading&hellip; 0%</div>
@@ -138,6 +142,9 @@
           citySelect.appendChild(opt);
         }
         try { citySelect.value = localStorage.getItem('swapcity.city') || 'minneapolis'; } catch { /* default stays selected */ }
+        // The story paragraph names no cities by hand (it would go stale the next time one is added): it just counts them.
+        var blurb = document.getElementById('extraCityBlurb');
+        if (blurb && cities.length) blurb.textContent = ', plus ' + cities.length + (cities.length === 1 ? ' more real city' : ' more real cities') + ' you can drive right now — pick one from the menu below.';
       });
       citySelect.addEventListener('change', function () {
         try { localStorage.setItem('swapcity.city', citySelect.value); } catch { /* private browsing: the reload will just default back */ }
@@ -145,15 +152,15 @@
       });
 
       var shownAt = performance.now();
-      var MIN_MS = 5000; // the splash stays up at least this long, even on a fast, cached load
-      var pct = 0, ready = false;
+      var MIN_MS = 5000; // the splash stays up at least this long on first load, even on a fast, cached one
+      var pct = 0, ready = false, open = true;
 
       function paint() {
         fill.style.width = pct + '%';
         var elapsed = performance.now() - shownAt;
         var canGo = ready && elapsed >= MIN_MS;
         status.textContent = ready ? 'Ready' : ('Loading… ' + pct + '%');
-        goEl.textContent = canGo ? 'Click or press any key to start' : (ready ? 'Just a moment…' : 'Loading…');
+        goEl.textContent = canGo ? 'Click or press any key to play' : (ready ? 'Just a moment…' : 'Loading…');
         goEl.classList.toggle('ready', canGo);
       }
       paint();
@@ -166,23 +173,42 @@
         paint();
       };
 
+      function pauseGame(pause) {
+        try {
+          // scene.scenes[0], not getScenes(true): the latter only returns ACTIVE scenes, so it would find nothing
+          // to resume once the scene was already paused (a paused scene is not "active").
+          var scene = window.__game && window.__game.scene.scenes[0];
+          if (scene) scene.scene[pause ? 'pause' : 'resume']();
+        } catch { /* the game has not booted yet (still on the very first load) */ }
+      }
+
       var go = function () {
-        if (!ready || performance.now() - shownAt < MIN_MS) return;
-        clearInterval(timer);
+        if (!open || !ready || performance.now() - shownAt < MIN_MS) return;
+        open = false;
         el.style.display = 'none';
-        document.removeEventListener('keydown', go);
-        el.removeEventListener('pointerdown', pointerGo);
-      };
-      var pointerGo = function (e) {
-        if (!el.contains(e.target) || e.target.closest('select') || e.target.closest('details')) return;
-        go();
+        pauseGame(false);
       };
       document.addEventListener('keydown', function (e) {
         var a = document.activeElement;
         if (a && (a.id === 'citySelect' || a.closest('details'))) return;
-        go(e);
+        go();
       });
-      el.addEventListener('pointerdown', pointerGo);
+      el.addEventListener('pointerdown', function (e) {
+        if (!el.contains(e.target) || e.target.closest('select') || e.target.closest('details')) return;
+        go();
+      });
+
+      // Esc opens this same screen back up as a main menu, mid-game: pause the world, let the player change city or
+      // just resume. Before the game has finished its first load there is nothing yet to pause, and the loading gate
+      // above already controls when the screen can be dismissed, so this only ever matters once play has started.
+      window.addEventListener('keydown', function (e) {
+        if (e.code !== 'Escape' || open) return;
+        var a = document.activeElement;
+        if (a instanceof HTMLSelectElement || a instanceof HTMLTextAreaElement) return;
+        open = true;
+        el.style.display = 'flex';
+        pauseGame(true);
+      });
     })();
   </script>
   <script type="module" src="/src/main.js"></script>

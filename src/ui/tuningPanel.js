@@ -10,6 +10,12 @@ export class TuningPanel {
     root.id = 'tune';
     root.hidden = true;
     root.innerHTML = `<h3>Settings <small>T to close</small></h3>`;
+    // Live performance/scene stats: kept here (out of the way) rather than always on screen, where they used to run into
+    // the OSM attribution in the corner and read as an error message ("look: offline") to a non-technical player.
+    this.debugEl = document.createElement('pre');
+    this.debugEl.id = 'tune-debug';
+    this.debugEl.style.cssText = 'margin: 0 0 10px; white-space: pre-wrap; color: #8a959c; font-size: 11px; line-height: 1.4;';
+    root.appendChild(this.debugEl);
     for (const g of SPEC) {
       const h = document.createElement('h4'); h.textContent = g.group; root.appendChild(h);
       if (g.group === 'Camera') root.appendChild(this.presetRow());
@@ -81,4 +87,5 @@ export class TuningPanel {
 
   toggle() { this.root.hidden = !this.root.hidden; }
   show() { this.root.hidden = false; }
+  setDebug(text) { if (!this.root.hidden) this.debugEl.textContent = text; }
 }

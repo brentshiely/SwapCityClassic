@@ -360,9 +360,10 @@ export class WorldScene extends Phaser.Scene {
   }
 
   hudText(left, controls) {
+    // The controls hint is the only thing shown on screen by default, clear of the OSM attribution in the corner.
+    // Live perf/scene stats go to the T settings panel instead (TuningPanel.setDebug), not the always-on HUD.
+    if (controls !== this.hudControlsShown) { this.hudControlsShown = controls; this.hud.textContent = controls; }
     const s = this.buildings.stats;
-    this.hud.textContent =
-      `${Math.round(this.game.loop.actualFps)} fps  |  ${left}  |  ${s.drawn} buildings in ${s.ms.toFixed(1)} ms\n` +
-      `${controls}`;
+    this.tuning.setDebug(`${Math.round(this.game.loop.actualFps)} fps  |  ${left}  |  ${s.drawn} buildings in ${s.ms.toFixed(1)} ms`);
   }
 }
